@@ -1,0 +1,6 @@
+{
+  "name": "EduChem Studio",
+  "description": "Hệ thống quản lý ngân hàng câu hỏi Hóa học, nhập đề từ Word, tạo đề thi và tổ chức thi trực tuyến thông minh.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
