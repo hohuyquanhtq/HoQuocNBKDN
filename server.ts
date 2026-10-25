@@ -22,20 +22,33 @@ if (!fs.existsSync(DATA_DIR)) {
 }
 
 // Helper to read DB
-function readDb(): { exams: any[]; submissions: any[]; questions: any[] } {
+interface DatabaseSchema {
+  users: any[];
+  exams: any[];
+  submissions: any[];
+  questions: any[];
+}
+
+function readDb(): DatabaseSchema {
   try {
     if (fs.existsSync(DB_FILE)) {
       const content = fs.readFileSync(DB_FILE, 'utf-8');
-      return JSON.parse(content);
+      const parsed = JSON.parse(content);
+      return {
+        users: Array.isArray(parsed.users) ? parsed.users : [],
+        exams: Array.isArray(parsed.exams) ? parsed.exams : [],
+        submissions: Array.isArray(parsed.submissions) ? parsed.submissions : [],
+        questions: Array.isArray(parsed.questions) ? parsed.questions : [],
+      };
     }
   } catch (err) {
     console.error('Error reading db.json:', err);
   }
-  return { exams: [], submissions: [], questions: [] };
+  return { users: [], exams: [], submissions: [], questions: [] };
 }
 
 // Helper to write DB
-function writeDb(data: { exams: any[]; submissions: any[]; questions: any[] }): void {
+function writeDb(data: DatabaseSchema): void {
   try {
     fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf-8');
   } catch (err) {
@@ -47,6 +60,7 @@ function writeDb(data: { exams: any[]; submissions: any[]; questions: any[] }): 
 const dbData = readDb();
 if (!dbData.exams || dbData.exams.length === 0) {
   writeDb({
+    users: dbData.users || [],
     exams: [
       {
         id: 'exam-can-bang-hoa-hoc-11',
@@ -71,8 +85,8 @@ if (!dbData.exams || dbData.exams.length === 0) {
         submittedCount: 0,
       },
     ],
-    submissions: [],
-    questions: [],
+    submissions: dbData.submissions || [],
+    questions: dbData.questions || [],
   });
 }
 
@@ -83,18 +97,92 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', serverTime: new Date().toISOString() });
 });
 
+// --- USER & AUTH ROUTES (SHARED ACROSS DEVICES) ---
+app.get('/api/users', (req, res) => {
+  const db = readDb();
+  // Return users with safe public data
+  const safeUsers = (db.users || []).map(({ passwordHash, ...safe }) => safe);
+  res.json(safeUsers);
+});
+
+app.post('/api/users/sync', (req, res) => {
+  const db = readDb();
+  const { users } = req.body;
+  if (Array.isArray(users)) {
+    const existingMap = new Map((db.users || []).map((u: any) => [u.id, u]));
+    for (const u of users) {
+      if (u.id && !existingMap.has(u.id)) {
+        existingMap.set(u.id, u);
+      }
+    }
+    db.users = Array.from(existingMap.values());
+    writeDb(db);
+  }
+  res.json({ success: true, count: (db.users || []).length });
+});
+
+app.post('/api/users/register', (req, res) => {
+  const db = readDb();
+  const newUser = req.body;
+  if (!newUser.username || !newUser.passwordHash || !newUser.role) {
+    return res.status(400).json({ error: 'Thiếu thông tin đăng ký bắt buộc.' });
+  }
+
+  const cleanUsername = newUser.username.trim().toLowerCase();
+  const exists = (db.users || []).some(
+    (u: any) => u.username && u.username.toLowerCase() === cleanUsername
+  );
+  if (exists) {
+    return res.status(409).json({ error: 'Tên đăng nhập đã tồn tại trong hệ thống.' });
+  }
+
+  db.users = db.users || [];
+  db.users.push(newUser);
+  writeDb(db);
+
+  const { passwordHash, ...safeUser } = newUser;
+  res.json({ success: true, user: safeUser });
+});
+
+app.post('/api/users/login', (req, res) => {
+  const db = readDb();
+  const { username, passwordHash } = req.body;
+  if (!username || !passwordHash) {
+    return res.status(400).json({ error: 'Thiếu thông tin đăng nhập.' });
+  }
+
+  const cleanUsername = username.trim().toLowerCase();
+  const user = (db.users || []).find(
+    (u: any) => u.username && u.username.toLowerCase() === cleanUsername
+  );
+
+  if (!user || user.passwordHash !== passwordHash) {
+    return res.status(401).json({ error: 'Tên đăng nhập hoặc mật khẩu không chính xác.' });
+  }
+
+  const { passwordHash: _, ...safeUser } = user;
+  res.json({ success: true, user: safeUser });
+});
+
+// --- EXAM ROUTES ---
+
 // GET all exams
 app.get('/api/exams', (req, res) => {
   const db = readDb();
   res.json(db.exams || []);
 });
 
-// GET exam by code or id (supports students opening link from any device)
+// GET exam by code or id (supports students opening link from any device/browser)
 app.get('/api/exams/:codeOrId', (req, res) => {
   const db = readDb();
-  const search = req.params.codeOrId.trim().toUpperCase();
+  const rawParam = (req.params.codeOrId || '').trim();
+  const upperSearch = rawParam.toUpperCase();
+
   const exam = (db.exams || []).find(
-    (e: any) => (e.code && e.code.toUpperCase() === search) || e.id === req.params.codeOrId
+    (e: any) =>
+      (e.code && e.code.trim().toUpperCase() === upperSearch) ||
+      (e.id && e.id.trim().toUpperCase() === upperSearch) ||
+      (e.id && e.id.trim() === rawParam)
   );
 
   if (!exam) {

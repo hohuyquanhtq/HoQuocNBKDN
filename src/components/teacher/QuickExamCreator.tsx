@@ -10,7 +10,7 @@ import {
 import {
   generateExamFromCriteria,
   generateUniqueExamCode,
-  saveExam,
+  saveExamAsync,
 } from '../../services/storage.ts';
 import { ChemistryText } from '../ChemistryText.tsx';
 import QRCode from 'qrcode';
@@ -109,7 +109,7 @@ export const QuickExamCreator: React.FC<QuickExamCreatorProps> = ({
   }, [publishedExam]);
 
   // Handle Auto Create
-  const handleAutoCreate = () => {
+  const handleAutoCreate = async () => {
     setErrorMessage(null);
 
     if (!title.trim()) {
@@ -146,13 +146,20 @@ export const QuickExamCreator: React.FC<QuickExamCreatorProps> = ({
       return;
     }
 
+    const saveRes = await saveExamAsync(res.exam);
+    if (!saveRes.success) {
+      setErrorMessage(saveRes.error || 'Không thể lưu đề thi lên máy chủ dùng chung.');
+      alert(saveRes.error || 'Lỗi lưu đề thi lên máy chủ.');
+      return;
+    }
+
     // Success! Show link & QR code
-    onExamCreated(res.exam);
-    setPublishedExam(res.exam);
+    onExamCreated(saveRes.exam);
+    setPublishedExam(saveRes.exam);
   };
 
   // Handle Manual Create
-  const handleManualCreate = () => {
+  const handleManualCreate = async () => {
     setErrorMessage(null);
 
     if (!title.trim()) {
@@ -197,9 +204,15 @@ export const QuickExamCreator: React.FC<QuickExamCreatorProps> = ({
       submittedCount: 0,
     };
 
-    saveExam(newExam);
-    onExamCreated(newExam);
-    setPublishedExam(newExam);
+    const res = await saveExamAsync(newExam);
+    if (!res.success) {
+      setErrorMessage(res.error || 'Lỗi khi lưu đề thi vào hệ thống dùng chung.');
+      alert(res.error || 'Không thể lưu đề thi lên máy chủ. Vui lòng thử lại.');
+      return;
+    }
+
+    onExamCreated(res.exam);
+    setPublishedExam(res.exam);
   };
 
   const handleCopyLink = () => {

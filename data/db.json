@@ -1,0 +1,99 @@
+{
+  "users": [],
+  "exams": [
+    {
+      "id": "exam-demo-shared-01",
+      "code": "CHEM-DEMO",
+      "title": "Đề khảo sát Hóa học chung 2025",
+      "subject": "Hóa học",
+      "targetGrade": "Lớp 11",
+      "timeLimitMinutes": 15,
+      "totalPoints": 10,
+      "isPublished": true,
+      "status": "open",
+      "questions": [
+        {
+          "id": "q1",
+          "type": "multiple_choice",
+          "stem": "Chất nào sau đây là chất điện li mạnh?",
+          "options": [
+            {
+              "id": "A",
+              "text": "CH3COOH"
+            },
+            {
+              "id": "B",
+              "text": "NaCl"
+            },
+            {
+              "id": "C",
+              "text": "H2O"
+            },
+            {
+              "id": "D",
+              "text": "C2H5OH"
+            }
+          ],
+          "correctAnswer": "B",
+          "explanation": "NaCl là muối tan hoàn toàn trong nước, phân li thành ion Na+ và Cl- nên là chất điện li mạnh."
+        }
+      ],
+      "submittedCount": 1
+    },
+    {
+      "id": "test-exam-1",
+      "code": "CHEM-TEST",
+      "title": "Test Exam",
+      "questions": []
+    },
+    {
+      "id": "exam-can-bang-hoa-hoc-11",
+      "code": "CHEM-2025-01",
+      "title": "Đề kiểm tra Hóa học 11 - Chủ đề Cân bằng hóa học (GDPT 2018)",
+      "subject": "Hóa học",
+      "topic": "Cân bằng hóa học",
+      "targetGrade": "Lớp 11",
+      "description": "Gồm 3 phần: Trắc nghiệm 4 lựa chọn, Đúng/Sai với 4 phát biểu và Trả lời ngắn.",
+      "timeLimitMinutes": 20,
+      "totalPoints": 10,
+      "questions": [],
+      "createdAt": "2026-10-25T02:57:04.712Z",
+      "createdBy": "user-gv-1",
+      "isPublished": true,
+      "status": "open",
+      "shuffleQuestions": false,
+      "shuffleOptions": false,
+      "publishScoreMode": "immediately",
+      "allowReviewAfterSubmit": true,
+      "startedCount": 0,
+      "submittedCount": 0
+    }
+  ],
+  "submissions": [
+    {
+      "id": "sub-test-01",
+      "examId": "exam-demo-shared-01",
+      "examCode": "CHEM-DEMO",
+      "examTitle": "Đề khảo sát Hóa học chung 2025",
+      "studentId": "user-hs-1",
+      "studentName": "Trần Thị Lan Anh",
+      "studentClass": "11A1",
+      "startedAt": "2026-10-25T03:00:00.000Z",
+      "submittedAt": "2026-10-25T03:10:00.000Z",
+      "durationSeconds": 600,
+      "answers": {},
+      "flaggedQuestionIds": [],
+      "totalScore": 10,
+      "maxScore": 10,
+      "correctCount": 1,
+      "partiallyCorrectCount": 0,
+      "incorrectCount": 0,
+      "unansweredCount": 0,
+      "questionResults": [],
+      "questionsSnapshot": [],
+      "publishScoreMode": "immediately",
+      "allowReviewAfterSubmit": true
+    }
+  ],
+  "questions": []
+}

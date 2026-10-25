@@ -16,7 +16,7 @@ export const ExamList: React.FC<ExamListProps> = ({
   onStartExam,
   onOpenAuth,
 }) => {
-  const publishedExams = exams.filter(e => e.isPublished);
+  const publishedExams = exams.filter(e => e.isPublished || e.status === 'open');
 
   // Quick Join by Code
   const [inputCode, setInputCode] = useState('');

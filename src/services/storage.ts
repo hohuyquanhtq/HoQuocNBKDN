@@ -261,8 +261,8 @@ export function generateUniqueExamCode(): string {
 
 export async function initializeStorage(): Promise<void> {
   // Check users
-  const rawUsers = getLocalItem(STORAGE_KEYS.USERS);
-  if (!rawUsers) {
+  let users = getUsers();
+  if (users.length === 0) {
     const gvPassHash = await hashPassword('educhem2025@');
     const hsPassHash = await hashPassword('hocsinh2025@');
 
@@ -289,7 +289,17 @@ export async function initializeStorage(): Promise<void> {
       },
     ];
     setLocalItem(STORAGE_KEYS.USERS, JSON.stringify(defaultUsers));
+    users = defaultUsers;
   }
+
+  // Sync users to server
+  try {
+    await fetch('/api/users/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ users }),
+    });
+  } catch {}
 
   // Check questions
   const rawQuestions = getLocalItem(STORAGE_KEYS.QUESTIONS);
@@ -303,47 +313,8 @@ export async function initializeStorage(): Promise<void> {
     setLocalItem(STORAGE_KEYS.EXAMS, JSON.stringify([SEED_EXAM]));
   }
 
-  // Sync with server in background
-  syncWithServerBackground();
-}
-
-async function syncWithServerBackground(): Promise<void> {
-  try {
-    const res = await fetch('/api/exams');
-    if (res.ok) {
-      const serverExams = await res.json();
-      if (Array.isArray(serverExams) && serverExams.length > 0) {
-        // Merge with local exams
-        const local = getExams();
-        const serverIds = new Set(serverExams.map((e: Exam) => e.id));
-        const merged = [...serverExams];
-        for (const loc of local) {
-          if (!serverIds.has(loc.id)) {
-            merged.push(loc);
-            // also upload to server
-            fetch('/api/exams', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(loc),
-            }).catch(() => {});
-          }
-        }
-        setLocalItem(STORAGE_KEYS.EXAMS, JSON.stringify(merged));
-      } else {
-        // push seed exam to server
-        const local = getExams();
-        for (const e of local) {
-          fetch('/api/exams', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(e),
-          }).catch(() => {});
-        }
-      }
-    }
-  } catch {
-    // offline mode or standalone vite
-  }
+  // Load and sync exams with server
+  await loadAllExamsFromServer();
 }
 
 // User methods
@@ -385,21 +356,69 @@ export async function registerUser(data: {
     createdAt: new Date().toISOString(),
   };
 
+  // Sync to server API
+  try {
+    const res = await fetch('/api/users/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newUser),
+    });
+
+    if (res.status === 409) {
+      return { success: false, error: 'Tên đăng nhập đã tồn tại trong hệ thống.' };
+    }
+  } catch (err) {
+    console.warn('Could not register user to server, storing locally:', err);
+  }
+
   users.push(newUser);
   setLocalItem(STORAGE_KEYS.USERS, JSON.stringify(users));
   return { success: true, user: newUser };
 }
 
 export async function loginUser(username: string, password: string): Promise<{ success: boolean; error?: string; user?: User }> {
-  const users = getUsers();
   const cleanUsername = username.trim().toLowerCase();
+  const passwordHash = await hashPassword(password);
+
+  // Try server login first to support cross-device authentication
+  try {
+    const res = await fetch('/api/users/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: cleanUsername, passwordHash }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.user) {
+        // Cache user locally
+        const users = getUsers();
+        const idx = users.findIndex(u => u.id === data.user.id);
+        const fullUser: User = { ...data.user, passwordHash };
+        if (idx >= 0) {
+          users[idx] = fullUser;
+        } else {
+          users.push(fullUser);
+        }
+        setLocalItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+        setCurrentUser(fullUser);
+        return { success: true, user: fullUser };
+      }
+    } else if (res.status === 401) {
+      return { success: false, error: 'Tên đăng nhập hoặc mật khẩu không chính xác.' };
+    }
+  } catch (err) {
+    console.warn('Server login error, using local fallback:', err);
+  }
+
+  // Fallback to local storage lookup
+  const users = getUsers();
   const user = users.find(u => u.username.toLowerCase() === cleanUsername);
 
   if (!user) {
     return { success: false, error: 'Tên đăng nhập hoặc mật khẩu không chính xác.' };
   }
 
-  const passwordHash = await hashPassword(password);
   if (user.passwordHash !== passwordHash) {
     return { success: false, error: 'Tên đăng nhập hoặc mật khẩu không chính xác.' };
   }
@@ -540,27 +559,84 @@ export function getExamByCode(code: string): Exam | undefined {
 
 // Cross-device server fetcher for direct link support
 export async function fetchExamByCodeFromServer(codeOrId: string): Promise<Exam | undefined> {
-  // Check local first
-  const local = getExamByCode(codeOrId) || getExamById(codeOrId);
-  if (local) return local;
+  const clean = codeOrId.trim();
 
-  // Fetch from server API
+  // 1. Query shared server API first so other accounts get real-time state
   try {
-    const res = await fetch(`/api/exams/${encodeURIComponent(codeOrId.trim())}`);
+    const res = await fetch(`/api/exams/${encodeURIComponent(clean)}`);
     if (res.ok) {
       const serverExam: Exam = await res.json();
       if (serverExam && serverExam.id) {
-        saveExam(serverExam); // cache locally
+        // Cache to local storage
+        const list = getExams();
+        const idx = list.findIndex(e => e.id === serverExam.id);
+        if (idx >= 0) {
+          list[idx] = serverExam;
+        } else {
+          list.unshift(serverExam);
+        }
+        setLocalItem(STORAGE_KEYS.EXAMS, JSON.stringify(list));
         return serverExam;
       }
     }
   } catch (err) {
     console.warn('Could not fetch exam from server, using local fallback:', err);
   }
-  return undefined;
+
+  // 2. Fallback to local storage (if offline or server unreachable)
+  const local = getExamByCode(clean) || getExamById(clean);
+  return local;
 }
 
-export function saveExam(exam: Exam): void {
+export async function loadAllExamsFromServer(): Promise<Exam[]> {
+  try {
+    const res = await fetch('/api/exams');
+    if (res.ok) {
+      const serverExams = await res.json();
+      if (Array.isArray(serverExams)) {
+        // Merge with local exams
+        const local = getExams();
+        const serverExamMap = new Map<string, Exam>(serverExams.map((e: Exam) => [e.id, e]));
+
+        for (const loc of local) {
+          const sExam = serverExamMap.get(loc.id);
+          if (!sExam) {
+            serverExamMap.set(loc.id, loc);
+            // upload local-only exam to server
+            fetch('/api/exams', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(loc),
+            }).catch(() => {});
+          } else if (
+            (!sExam.questions || sExam.questions.length === 0) &&
+            loc.questions &&
+            loc.questions.length > 0
+          ) {
+            // Update server with full questions
+            sExam.questions = loc.questions;
+            serverExamMap.set(loc.id, sExam);
+            fetch('/api/exams', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(sExam),
+            }).catch(() => {});
+          }
+        }
+
+        const merged = Array.from(serverExamMap.values());
+        setLocalItem(STORAGE_KEYS.EXAMS, JSON.stringify(merged));
+        return merged;
+      }
+    }
+  } catch (err) {
+    console.warn('Could not fetch exams from server, using local fallback:', err);
+  }
+  return getExams();
+}
+
+// Asynchronously saves an exam to shared database and waits for confirmation
+export async function saveExamAsync(exam: Exam): Promise<{ success: boolean; exam: Exam; error?: string }> {
   // Ensure code and status are present
   if (!exam.code) {
     exam.code = generateUniqueExamCode();
@@ -569,6 +645,7 @@ export function saveExam(exam: Exam): void {
     exam.status = exam.isPublished ? 'open' : 'draft';
   }
 
+  // Cache locally
   const list = getExams();
   const idx = list.findIndex(e => e.id === exam.id);
   if (idx >= 0) {
@@ -578,12 +655,49 @@ export function saveExam(exam: Exam): void {
   }
   setLocalItem(STORAGE_KEYS.EXAMS, JSON.stringify(list));
 
-  // Sync to server
-  fetch('/api/exams', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(exam),
-  }).catch(() => {});
+  // Sync to server and wait for confirmation
+  try {
+    const res = await fetch('/api/exams', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(exam),
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      return {
+        success: false,
+        exam,
+        error: errData.error || `Máy chủ lưu trữ trả về lỗi (${res.status}). Không thể đồng bộ đề thi.`,
+      };
+    }
+
+    const data = await res.json();
+    const savedExam: Exam = data.exam || exam;
+
+    // Confirm in local storage
+    const updatedList = getExams();
+    const upIdx = updatedList.findIndex(e => e.id === savedExam.id);
+    if (upIdx >= 0) {
+      updatedList[upIdx] = savedExam;
+    } else {
+      updatedList.unshift(savedExam);
+    }
+    setLocalItem(STORAGE_KEYS.EXAMS, JSON.stringify(updatedList));
+
+    return { success: true, exam: savedExam };
+  } catch (err: any) {
+    console.error('Error saving exam to server:', err);
+    return {
+      success: false,
+      exam,
+      error: 'Không thể kết nối đến máy chủ lưu trữ dùng chung. Vui lòng thử lại.',
+    };
+  }
+}
+
+export function saveExam(exam: Exam): void {
+  saveExamAsync(exam).catch(err => console.error('saveExam error:', err));
 }
 
 export function updateExamStatus(id: string, status: ExamStatus): void {

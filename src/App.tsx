@@ -11,6 +11,8 @@ import {
   saveMultipleQuestions,
   getExams,
   saveExam,
+  saveExamAsync,
+  loadAllExamsFromServer,
   deleteExam,
   updateExamStatus,
   getSubmissions,
@@ -18,6 +20,7 @@ import {
   getSubmissionsByStudent,
   fetchExamByCodeFromServer,
 } from './services/storage.ts';
+import { Play, Sparkles, AlertCircle } from 'lucide-react';
 
 import { Header, ActiveTab } from './components/Header.tsx';
 import { AuthModal } from './components/AuthModal.tsx';
@@ -47,6 +50,7 @@ export default function App() {
   const [guestClass, setGuestClass] = useState<string>('');
   const [activeSubmission, setActiveSubmission] = useState<ExamSubmission | null>(null);
   const [reviewSubmission, setReviewSubmission] = useState<ExamSubmission | null>(null);
+  const [pendingExam, setPendingExam] = useState<Exam | null>(null);
 
   // Modals
   const [isAuthOpen, setIsAuthOpen] = useState(false);
@@ -55,6 +59,23 @@ export default function App() {
   const [isReady, setIsReady] = useState(false);
   const [linkNotice, setLinkNotice] = useState<string | null>(null);
 
+  // Helper to extract exam code or ID from query or pathname
+  function extractExamCodeFromUrl(): string | null {
+    const params = new URLSearchParams(window.location.search);
+    const fromQuery =
+      params.get('examCode') || params.get('code') || params.get('examId') || params.get('id');
+    if (fromQuery && fromQuery.trim()) {
+      return fromQuery.trim();
+    }
+    // Check pathname: /online-exam/CHEM-XXXX, /exam/CHEM-XXXX, /de-thi/CHEM-XXXX
+    const path = window.location.pathname;
+    const match = path.match(/\/(?:online-exam|exam|de-thi)\/([^/?#]+)/i);
+    if (match && match[1]) {
+      return decodeURIComponent(match[1].trim());
+    }
+    return null;
+  }
+
   // Initialize data and check URL parameters on mount
   useEffect(() => {
     async function init() {
@@ -62,33 +83,47 @@ export default function App() {
       const user = getCurrentUser();
       setCurrentUserState(user);
       const loadedQuestions = getQuestions();
-      const loadedExams = getExams();
+      // Load all server exams first to guarantee cross-device persistence
+      const loadedExams = await loadAllExamsFromServer();
       setQuestionsState(loadedQuestions);
       setExamsState(loadedExams);
       setSubmissionsState(getSubmissions());
 
-      // Check if URL has ?examCode=... or ?code=...
-      const params = new URLSearchParams(window.location.search);
-      const examCodeParam = params.get('examCode') || params.get('code');
+      const examCodeParam = extractExamCodeFromUrl();
 
       if (examCodeParam) {
         const found = await fetchExamByCodeFromServer(examCodeParam);
         if (found) {
+          // Always ensure the found exam is present in examsState
+          setExamsState(prev => {
+            const idx = prev.findIndex(e => e.id === found.id || e.code === found.code);
+            if (idx >= 0) {
+              const copy = [...prev];
+              copy[idx] = found;
+              return copy;
+            }
+            return [found, ...prev];
+          });
+
           if (found.status === 'closed') {
             setLinkNotice(`Bài thi "${found.title}" (Mã: ${found.code}) hiện đã đóng nhận bài.`);
             setActiveTab('exams');
           } else {
-            // If user is logged in, launch exam directly
+            setPendingExam(found);
             if (user) {
+              // User already authenticated -> direct entry!
               setActiveExam(found);
             } else {
-              // Open guest join on exam list
+              // Not yet logged in -> show exam on list and prompt
               setActiveTab('exams');
-              setLinkNotice(`Bạn đang mở bài thi: "${found.title}" (Mã: ${found.code}). Nhấn "Bắt đầu làm bài" để vào thi!`);
+              setLinkNotice(
+                `Bạn đang mở bài thi: "${found.title}" (Mã: ${found.code}). Nhấn "Bắt đầu làm bài" để vào thi!`
+              );
             }
           }
         } else {
-          setLinkNotice(`Không tìm thấy bài thi với mã "${examCodeParam}".`);
+          setLinkNotice(`Không tìm thấy bài thi với mã "${examCodeParam}". Vui lòng kiểm tra lại liên kết.`);
+          setActiveTab('exams');
         }
       } else {
         if (user?.role === 'GV') {
@@ -121,9 +156,10 @@ export default function App() {
   };
 
   // Exam helpers
-  const handleSaveExam = (exam: Exam) => {
-    saveExam(exam);
-    setExamsState(getExams());
+  const handleSaveExam = async (exam: Exam) => {
+    await saveExamAsync(exam);
+    const freshExams = await loadAllExamsFromServer();
+    setExamsState(freshExams);
   };
 
   const handleDeleteExam = (id: string) => {
@@ -141,12 +177,24 @@ export default function App() {
     saveSubmission(submission);
     setSubmissionsState(getSubmissions());
     setActiveExam(null);
+    setPendingExam(null);
     setActiveSubmission(submission); // Move directly to result screen
   };
 
   // Auth actions
-  const handleLoginSuccess = (user: User) => {
+  const handleLoginSuccess = async (user: User) => {
     setCurrentUserState(user);
+
+    // Refresh all shared exams from server upon login
+    const freshExams = await loadAllExamsFromServer();
+    setExamsState(freshExams);
+
+    // If an exam was opened via link or pending, launch it immediately!
+    if (pendingExam && pendingExam.status !== 'closed') {
+      setActiveExam(pendingExam);
+      return;
+    }
+
     if (user.role === 'GV') {
       setActiveTab('word_exam_creator');
     } else {
@@ -154,12 +202,15 @@ export default function App() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     clearCurrentUser();
     setCurrentUserState(null);
     setActiveExam(null);
     setActiveSubmission(null);
     setReviewSubmission(null);
+    setPendingExam(null);
+    const fresh = await loadAllExamsFromServer();
+    setExamsState(fresh);
     setActiveTab('exams');
   };
 
@@ -298,6 +349,9 @@ export default function App() {
           } else {
             setActiveTab(tab);
           }
+          if (tab === 'exams') {
+            loadAllExamsFromServer().then(fresh => setExamsState(fresh));
+          }
         }}
         onOpenAuth={(mode) => {
           setAuthMode(mode);
@@ -307,8 +361,64 @@ export default function App() {
         onLogout={handleLogout}
       />
 
-      {/* Direct Link Banner notice if loaded from URL parameter */}
-      {linkNotice && (
+      {/* Prominent Direct Link Exam Card when opened via link or code */}
+      {pendingExam && !activeExam && (
+        <div className="bg-gradient-to-r from-emerald-700 via-teal-700 to-cyan-800 text-white border-b border-emerald-600 shadow-md">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/20 text-emerald-100 text-[11px] font-bold">
+                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                ĐỀ THI ĐƯỢC MỞ QUA LIÊN KẾT TRỰC TUYẾN
+              </div>
+              <h2 className="text-base sm:text-lg font-black tracking-tight">{pendingExam.title}</h2>
+              <div className="flex items-center gap-3 text-xs text-emerald-100 flex-wrap">
+                <span>
+                  Mã đề: <strong className="font-mono bg-white/15 px-2 py-0.5 rounded-md">{pendingExam.code}</strong>
+                </span>
+                <span>•</span>
+                <span>
+                  Thời gian: {pendingExam.timeLimitMinutes > 0 ? `${pendingExam.timeLimitMinutes} phút` : 'Không giới hạn'}
+                </span>
+                <span>•</span>
+                <span>Số câu hỏi: {pendingExam.questions.length} câu</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+              <button
+                onClick={() => handleStartExam(pendingExam)}
+                className="px-5 py-2.5 bg-white text-emerald-800 hover:bg-emerald-50 rounded-xl text-xs font-black shadow-md flex items-center gap-1.5 transition-all cursor-pointer"
+              >
+                <Play className="w-4 h-4 fill-emerald-800" />
+                {currentUser ? 'BẮT ĐẦU LÀM BÀI' : 'VÀO THI NHANH (KHÁCH)'}
+              </button>
+
+              {!currentUser && (
+                <button
+                  onClick={() => {
+                    setAuthMode('login');
+                    setIsAuthOpen(true);
+                  }}
+                  className="px-4 py-2.5 bg-emerald-800/80 hover:bg-emerald-800 text-white border border-white/20 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                >
+                  Đăng nhập tài khoản
+                </button>
+              )}
+
+              <button
+                onClick={() => setPendingExam(null)}
+                className="p-2 text-emerald-200 hover:text-white rounded-xl hover:bg-white/10 transition-colors"
+                title="Đóng thông báo"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Direct Link Banner notice if loaded from URL parameter and error or closed */}
+      {linkNotice && !pendingExam && (
         <div className="bg-emerald-50 border-b border-emerald-200 px-4 py-3 text-xs sm:text-sm text-emerald-900 font-semibold flex items-center justify-between">
           <span>📢 {linkNotice}</span>
           <button

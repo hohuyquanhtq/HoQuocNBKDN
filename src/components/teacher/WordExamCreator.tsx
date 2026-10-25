@@ -11,7 +11,7 @@ import {
 } from '../../types/index.ts';
 import { parseDocxFile } from '../../services/docxParser.ts';
 import { downloadSampleDocx } from '../../services/docxGenerator.ts';
-import { generateUniqueExamCode, saveExam } from '../../services/storage.ts';
+import { generateUniqueExamCode, saveExamAsync } from '../../services/storage.ts';
 import { ChemistryText } from '../ChemistryText.tsx';
 import QRCode from 'qrcode';
 import {
@@ -87,6 +87,7 @@ export const WordExamCreator: React.FC<WordExamCreatorProps> = ({
 
   // Success Modal
   const [publishedExam, setPublishedExam] = useState<Exam | null>(null);
+  const [isPublishing, setIsPublishing] = useState(false);
   const [qrCodeUrl, setQrCodeUrl] = useState<string>('');
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
@@ -378,21 +379,35 @@ export const WordExamCreator: React.FC<WordExamCreatorProps> = ({
       submittedCount: 0,
     };
 
-    saveExam(newExam);
-    onExamCreated(newExam);
-    setPublishedExam(newExam);
-
-    // Generate QR Code
-    const shareUrl = `${window.location.origin}/?examCode=${newExam.code}`;
+    setIsPublishing(true);
     try {
-      const qrData = await QRCode.toDataURL(shareUrl, {
-        width: 300,
-        margin: 2,
-        color: { dark: '#047857', light: '#ffffff' },
-      });
-      setQrCodeUrl(qrData);
+      const res = await saveExamAsync(newExam);
+      if (!res.success) {
+        alert(res.error || 'Không thể lưu đề thi lên hệ thống dùng chung. Vui lòng kiểm tra lại kết nối.');
+        return;
+      }
+
+      const verifiedExam = res.exam;
+      onExamCreated(verifiedExam);
+      setPublishedExam(verifiedExam);
+
+      // Generate QR Code
+      const shareUrl = `${window.location.origin}/?examCode=${verifiedExam.code}`;
+      try {
+        const qrData = await QRCode.toDataURL(shareUrl, {
+          width: 300,
+          margin: 2,
+          color: { dark: '#047857', light: '#ffffff' },
+        });
+        setQrCodeUrl(qrData);
+      } catch (err) {
+        console.error('QR code generation error:', err);
+      }
     } catch (err) {
-      console.error('QR code generation error:', err);
+      console.error('Publish error:', err);
+      alert('Đã xảy ra lỗi khi phát hành đề thi.');
+    } finally {
+      setIsPublishing(false);
     }
   };
 
@@ -1343,10 +1358,20 @@ export const WordExamCreator: React.FC<WordExamCreatorProps> = ({
 
             <button
               onClick={handlePublishExam}
-              className="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-sm shadow-lg shadow-emerald-600/25 flex items-center justify-center gap-2 transition-all transform active:scale-95"
+              disabled={isPublishing}
+              className="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-sm shadow-lg shadow-emerald-600/25 flex items-center justify-center gap-2 transition-all transform active:scale-95 disabled:opacity-50"
             >
-              <Zap className="w-4 h-4 fill-current text-amber-300" />
-              TẠO ĐỀ VÀ LẤY LINK LÀM BÀI
+              {isPublishing ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  ĐANG LƯU VÀO DATABASE DÙNG CHUNG...
+                </>
+              ) : (
+                <>
+                  <Zap className="w-4 h-4 fill-current text-amber-300" />
+                  TẠO ĐỀ VÀ LẤY LINK LÀM BÀI
+                </>
+              )}
             </button>
           </div>
         </div>
