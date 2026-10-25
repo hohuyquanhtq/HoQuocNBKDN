@@ -34,6 +34,7 @@ interface ExamManagerProps {
   onStartTakeExam: (exam: Exam) => void;
   onViewSubmissions: (exam: Exam) => void;
   onNavigateToQuickCreate: () => void;
+  onNavigateToWordExam?: () => void;
   teacherId: string;
 }
 
@@ -46,6 +47,7 @@ export const ExamManager: React.FC<ExamManagerProps> = ({
   onStartTakeExam,
   onViewSubmissions,
   onNavigateToQuickCreate,
+  onNavigateToWordExam,
   teacherId,
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -137,13 +139,23 @@ export const ExamManager: React.FC<ExamManagerProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5">
+          {onNavigateToWordExam && (
+            <button
+              onClick={onNavigateToWordExam}
+              className="flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-700 hover:to-cyan-700 text-white shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
+            >
+              <Zap className="w-4 h-4 fill-amber-300 text-amber-300" />
+              TẠO ĐỀ NHANH TỪ FILE WORD
+            </button>
+          )}
+
           <button
             onClick={onNavigateToQuickCreate}
-            className="flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white shadow-sm transition-all"
+            className="flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-bold rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 transition-all cursor-pointer"
           >
-            <Zap className="w-4 h-4 fill-white" />
-            TẠO ĐỀ NHANH & LẤY LINK
+            <Layers className="w-4 h-4 text-emerald-700" />
+            Tạo đề từ ngân hàng
           </button>
         </div>
       </div>

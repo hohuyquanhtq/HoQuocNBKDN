@@ -142,6 +142,7 @@ export interface QuestionGradingResult {
   status: 'correct' | 'partially_correct' | 'incorrect' | 'unanswered' | 'pending_manual';
   studentAnswer: any;
   correctAnswer: any;
+  teacherComment?: string;
   details?: {
     statementResults?: Record<'a' | 'b' | 'c' | 'd', {
       student?: boolean | null;

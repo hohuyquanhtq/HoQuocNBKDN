@@ -22,6 +22,7 @@ import {
 import { Header, ActiveTab } from './components/Header.tsx';
 import { AuthModal } from './components/AuthModal.tsx';
 import { ProfileModal } from './components/ProfileModal.tsx';
+import { WordExamCreator } from './components/teacher/WordExamCreator.tsx';
 import { QuickExamCreator } from './components/teacher/QuickExamCreator.tsx';
 import { QuestionBank } from './components/teacher/QuestionBank.tsx';
 import { WordImportModal } from './components/teacher/WordImportModal.tsx';
@@ -91,7 +92,7 @@ export default function App() {
         }
       } else {
         if (user?.role === 'GV') {
-          setActiveTab('quick_create');
+          setActiveTab('word_exam_creator');
         } else {
           setActiveTab('exams');
         }
@@ -147,7 +148,7 @@ export default function App() {
   const handleLoginSuccess = (user: User) => {
     setCurrentUserState(user);
     if (user.role === 'GV') {
-      setActiveTab('quick_create');
+      setActiveTab('word_exam_creator');
     } else {
       setActiveTab('exams');
     }
@@ -287,7 +288,11 @@ export default function App() {
           // If HS clicks teacher tabs, stay on exams
           if (
             currentUser?.role === 'HS' &&
-            (tab === 'quick_create' || tab === 'question_bank' || tab === 'word_import' || tab === 'teacher_results')
+            (tab === 'word_exam_creator' ||
+              tab === 'quick_create' ||
+              tab === 'question_bank' ||
+              tab === 'word_import' ||
+              tab === 'teacher_results')
           ) {
             setActiveTab('exams');
           } else {
@@ -317,6 +322,17 @@ export default function App() {
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Teacher Views */}
+        {currentUser?.role === 'GV' && activeTab === 'word_exam_creator' && (
+          <WordExamCreator
+            teacherId={currentUser.id}
+            onExamCreated={(newExam) => {
+              handleSaveExam(newExam);
+            }}
+            onPreviewExam={(exam) => handleStartExam(exam)}
+            onNavigateToExams={() => setActiveTab('exams')}
+          />
+        )}
+
         {currentUser?.role === 'GV' && activeTab === 'quick_create' && (
           <QuickExamCreator
             questions={questions}
@@ -339,6 +355,7 @@ export default function App() {
             onStartTakeExam={(exam) => handleStartExam(exam)}
             onViewSubmissions={() => setActiveTab('teacher_results')}
             onNavigateToQuickCreate={() => setActiveTab('quick_create')}
+            onNavigateToWordExam={() => setActiveTab('word_exam_creator')}
             teacherId={currentUser.id}
           />
         )}
@@ -361,6 +378,7 @@ export default function App() {
             submissions={submissions}
             exams={exams}
             onReviewSubmission={(sub) => setReviewSubmission(sub)}
+            onUpdateSubmission={() => setSubmissionsState(getSubmissions())}
           />
         )}
 

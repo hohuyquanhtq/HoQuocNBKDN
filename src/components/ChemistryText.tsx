@@ -1,15 +1,17 @@
 import React from 'react';
 
 interface ChemistryTextProps {
-  content: string;
+  content?: string;
+  text?: string;
   className?: string;
 }
 
-export const ChemistryText: React.FC<ChemistryTextProps> = ({ content, className = '' }) => {
-  if (!content) return null;
+export const ChemistryText: React.FC<ChemistryTextProps> = ({ content, text, className = '' }) => {
+  const str = content ?? text ?? '';
+  if (!str) return null;
 
   // Render text supporting line breaks and unicode chemistry symbols
-  const lines = content.split('\n');
+  const lines = str.split('\n');
 
   return (
     <div className={`leading-relaxed ${className}`}>

@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 
 export type ActiveTab =
+  | 'word_exam_creator'
   | 'quick_create'
   | 'question_bank'
   | 'word_import'
@@ -45,7 +46,7 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Logo */}
           <div
             className="flex items-center gap-3 cursor-pointer select-none"
-            onClick={() => onSelectTab(currentUser?.role === 'GV' ? 'quick_create' : 'exams')}
+            onClick={() => onSelectTab(currentUser?.role === 'GV' ? 'word_exam_creator' : 'exams')}
           >
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-600 via-teal-600 to-cyan-500 flex items-center justify-center text-white shadow-md shadow-emerald-600/20">
               <FlaskConical className="w-5 h-5" />
@@ -69,15 +70,27 @@ export const Header: React.FC<HeaderProps> = ({
               {currentUser.role === 'GV' ? (
                 <>
                   <button
+                    onClick={() => onSelectTab('word_exam_creator')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
+                      activeTab === 'word_exam_creator'
+                        ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-sm'
+                        : 'text-emerald-700 bg-emerald-50/80 hover:bg-emerald-100 border border-emerald-200 font-extrabold'
+                    }`}
+                  >
+                    <Zap className="w-3.5 h-3.5 fill-current text-amber-300" />
+                    Tạo đề nhanh từ Word
+                  </button>
+
+                  <button
                     onClick={() => onSelectTab('quick_create')}
                     className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
                       activeTab === 'quick_create'
-                        ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-sm'
-                        : 'text-slate-700 hover:text-emerald-700 hover:bg-emerald-50'
+                        ? 'bg-emerald-50 text-emerald-700 shadow-xs border border-emerald-200'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                     }`}
                   >
-                    <Zap className="w-3.5 h-3.5 fill-current" />
-                    Tạo đề nhanh & Giao bài
+                    <Layers className="w-3.5 h-3.5" />
+                    Tạo đề từ ngân hàng
                   </button>
 
                   <button
@@ -88,7 +101,7 @@ export const Header: React.FC<HeaderProps> = ({
                         : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                     }`}
                   >
-                    <Layers className="w-3.5 h-3.5" />
+                    <BookOpen className="w-3.5 h-3.5" />
                     Quản lý đề thi
                   </button>
 
@@ -102,18 +115,6 @@ export const Header: React.FC<HeaderProps> = ({
                   >
                     <BookOpen className="w-3.5 h-3.5" />
                     Ngân hàng câu hỏi
-                  </button>
-
-                  <button
-                    onClick={() => onSelectTab('word_import')}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
-                      activeTab === 'word_import'
-                        ? 'bg-emerald-50 text-emerald-700 shadow-xs border border-emerald-200'
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                    }`}
-                  >
-                    <FileSpreadsheet className="w-3.5 h-3.5" />
-                    Nhập Word (.docx)
                   </button>
 
                   <button
