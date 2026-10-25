@@ -88,6 +88,7 @@ export const WordExamCreator: React.FC<WordExamCreatorProps> = ({
   // Success Modal
   const [publishedExam, setPublishedExam] = useState<Exam | null>(null);
   const [isPublishing, setIsPublishing] = useState(false);
+  const [publishError, setPublishError] = useState<string | null>(null);
   const [qrCodeUrl, setQrCodeUrl] = useState<string>('');
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
@@ -338,13 +339,15 @@ export const WordExamCreator: React.FC<WordExamCreatorProps> = ({
 
   // Action: Create and Publish Exam directly
   const handlePublishExam = async () => {
+    setPublishError(null);
+
     if (questions.length === 0) {
-      alert('Chưa có câu hỏi nào để tạo đề thi. Vui lòng tải và phân tích file Word trước.');
+      setPublishError('Chưa có câu hỏi nào để tạo đề thi. Vui lòng tải và phân tích file Word trước.');
       return;
     }
 
     if (!examTitle.trim()) {
-      alert('Vui lòng nhập tên đề thi.');
+      setPublishError('Vui lòng nhập tên đề thi.');
       return;
     }
 
@@ -383,7 +386,7 @@ export const WordExamCreator: React.FC<WordExamCreatorProps> = ({
     try {
       const res = await saveExamAsync(newExam);
       if (!res.success) {
-        alert(res.error || 'Không thể lưu đề thi lên hệ thống dùng chung. Vui lòng kiểm tra lại kết nối.');
+        setPublishError(res.error || 'Không thể lưu đề thi lên hệ thống dùng chung. Vui lòng kiểm tra lại kết nối.');
         return;
       }
 
@@ -403,9 +406,9 @@ export const WordExamCreator: React.FC<WordExamCreatorProps> = ({
       } catch (err) {
         console.error('QR code generation error:', err);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Publish error:', err);
-      alert('Đã xảy ra lỗi khi phát hành đề thi.');
+      setPublishError(err?.message || 'Đã xảy ra lỗi khi phát hành đề thi.');
     } finally {
       setIsPublishing(false);
     }
@@ -1347,6 +1350,14 @@ export const WordExamCreator: React.FC<WordExamCreatorProps> = ({
               </div>
             </div>
           </div>
+
+          {/* Publish Error Notification */}
+          {publishError && (
+            <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center gap-2.5">
+              <FileWarning className="w-5 h-5 text-rose-600 shrink-0" />
+              <span>{publishError}</span>
+            </div>
+          )}
 
           {/* Action Button: Create and Get Link */}
           <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">

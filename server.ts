@@ -8,9 +8,21 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = parseInt(process.env.PORT || '3000', 10);
+// Port 3000 is required by the environment; ignore container-level PORT=8080 used by Nginx
+const PORT = 3000;
 
-app.use(express.json({ limit: '15mb' }));
+app.use(express.json({ limit: '20mb' }));
+
+// CORS & Preflight handling
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+  next();
+});
 
 // Database directory & file path
 const DATA_DIR = path.resolve(__dirname, 'data');
@@ -166,9 +178,30 @@ app.post('/api/users/login', (req, res) => {
 
 // --- EXAM ROUTES ---
 
-// GET all exams
+// GET all exams or query by code/id
 app.get('/api/exams', (req, res) => {
   const db = readDb();
+  const { code, id, examCode, examId } = req.query;
+  const searchCode = ((code || examCode) as string | undefined)?.trim();
+  const searchId = ((id || examId) as string | undefined)?.trim();
+
+  if (searchCode) {
+    const upper = searchCode.toUpperCase();
+    const found = (db.exams || []).find((e: any) => e.code && e.code.trim().toUpperCase() === upper);
+    if (!found) {
+      return res.status(404).json({ error: 'Không tìm thấy bài thi với mã này.' });
+    }
+    return res.json(found);
+  }
+
+  if (searchId) {
+    const found = (db.exams || []).find((e: any) => e.id === searchId || e.examId === searchId);
+    if (!found) {
+      return res.status(404).json({ error: 'Không tìm thấy bài thi với ID này.' });
+    }
+    return res.json(found);
+  }
+
   res.json(db.exams || []);
 });
 
@@ -182,7 +215,8 @@ app.get('/api/exams/:codeOrId', (req, res) => {
     (e: any) =>
       (e.code && e.code.trim().toUpperCase() === upperSearch) ||
       (e.id && e.id.trim().toUpperCase() === upperSearch) ||
-      (e.id && e.id.trim() === rawParam)
+      (e.id && e.id.trim() === rawParam) ||
+      (e.examId && e.examId.trim() === rawParam)
   );
 
   if (!exam) {
@@ -192,25 +226,69 @@ app.get('/api/exams/:codeOrId', (req, res) => {
   res.json(exam);
 });
 
-// POST save / update exam
-app.post('/api/exams', (req, res) => {
-  const db = readDb();
-  const newExam = req.body;
+// Handler for saving/updating exams supporting multiple routes and methods
+function handleSaveExam(req: express.Request, res: express.Response) {
+  try {
+    const db = readDb();
+    const newExam = req.body;
 
-  if (!newExam.id || !newExam.title) {
-    return res.status(400).json({ error: 'Dữ liệu đề thi không hợp lệ.' });
+    if (!newExam || typeof newExam !== 'object') {
+      return res.status(400).json({ error: 'Dữ liệu gửi lên không đúng định dạng JSON.' });
+    }
+
+    const examId = newExam.id || newExam.examId || (req.params && req.params.id);
+    if (!examId) {
+      return res.status(400).json({ error: 'Thiếu mã định danh của đề thi (id/examId).' });
+    }
+    if (!newExam.title || typeof newExam.title !== 'string' || !newExam.title.trim()) {
+      return res.status(400).json({ error: 'Vui lòng nhập tên đề thi hợp lệ.' });
+    }
+
+    newExam.id = examId;
+    newExam.examId = examId;
+
+    // Normalize exam fields for full cross-system compatibility
+    if (!newExam.code) {
+      newExam.code = `CHEM-${Math.floor(1000 + Math.random() * 9000)}`;
+    }
+    if (!newExam.status) {
+      newExam.status = newExam.isPublished ? 'open' : 'draft';
+    }
+    newExam.updatedAt = new Date().toISOString();
+    if (!newExam.createdAt) {
+      newExam.createdAt = newExam.updatedAt;
+    }
+    if (newExam.isPublished && !newExam.publishedAt) {
+      newExam.publishedAt = newExam.updatedAt;
+    }
+    if (newExam.shareEnabled === undefined) {
+      newExam.shareEnabled = true;
+    }
+    if (!newExam.ownerId && newExam.createdBy) {
+      newExam.ownerId = newExam.createdBy;
+    }
+
+    db.exams = db.exams || [];
+    const existingIdx = db.exams.findIndex((e: any) => e.id === examId || (e.code && e.code === newExam.code));
+    if (existingIdx >= 0) {
+      db.exams[existingIdx] = { ...db.exams[existingIdx], ...newExam };
+    } else {
+      db.exams.unshift(newExam);
+    }
+
+    writeDb(db);
+    return res.status(200).json({ success: true, exam: newExam });
+  } catch (err: any) {
+    console.error('Error saving exam:', err);
+    return res.status(500).json({ error: 'Lỗi máy chủ khi ghi dữ liệu đề thi vào cơ sở dữ liệu.' });
   }
+}
 
-  const existingIdx = (db.exams || []).findIndex((e: any) => e.id === newExam.id);
-  if (existingIdx >= 0) {
-    db.exams[existingIdx] = { ...db.exams[existingIdx], ...newExam };
-  } else {
-    db.exams.unshift(newExam);
-  }
-
-  writeDb(db);
-  res.json({ success: true, exam: newExam });
-});
+// Support POST & PUT on /api/exams and subpaths
+app.post('/api/exams', handleSaveExam);
+app.post('/api/exams/:id', handleSaveExam);
+app.put('/api/exams', handleSaveExam);
+app.put('/api/exams/:id', handleSaveExam);
 
 // PATCH toggle exam status (open / closed / draft)
 app.patch('/api/exams/:id/status', (req, res) => {
@@ -304,6 +382,13 @@ app.post('/api/questions', (req, res) => {
     writeDb(db);
   }
   res.json({ success: true, total: (db.questions || []).length });
+});
+
+// Explicit JSON 404 handler for any unhandled /api/* endpoints
+app.all('/api/*', (req, res) => {
+  res.status(404).json({
+    error: `Đường dẫn API '${req.method} ${req.path}' không tồn tại trên máy chủ.`,
+  });
 });
 
 // Mount Vite middleware in dev mode or serve static files in production

@@ -108,6 +108,8 @@ export const QuickExamCreator: React.FC<QuickExamCreatorProps> = ({
     }
   }, [publishedExam]);
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   // Handle Auto Create
   const handleAutoCreate = async () => {
     setErrorMessage(null);
@@ -146,16 +148,22 @@ export const QuickExamCreator: React.FC<QuickExamCreatorProps> = ({
       return;
     }
 
-    const saveRes = await saveExamAsync(res.exam);
-    if (!saveRes.success) {
-      setErrorMessage(saveRes.error || 'Không thể lưu đề thi lên máy chủ dùng chung.');
-      alert(saveRes.error || 'Lỗi lưu đề thi lên máy chủ.');
-      return;
-    }
+    setIsSubmitting(true);
+    try {
+      const saveRes = await saveExamAsync(res.exam);
+      if (!saveRes.success) {
+        setErrorMessage(saveRes.error || 'Không thể lưu đề thi lên máy chủ dùng chung.');
+        return;
+      }
 
-    // Success! Show link & QR code
-    onExamCreated(saveRes.exam);
-    setPublishedExam(saveRes.exam);
+      // Success! Show link & QR code
+      onExamCreated(saveRes.exam);
+      setPublishedExam(saveRes.exam);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Lỗi khi lưu đề thi lên máy chủ dùng chung.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Handle Manual Create
@@ -204,15 +212,21 @@ export const QuickExamCreator: React.FC<QuickExamCreatorProps> = ({
       submittedCount: 0,
     };
 
-    const res = await saveExamAsync(newExam);
-    if (!res.success) {
-      setErrorMessage(res.error || 'Lỗi khi lưu đề thi vào hệ thống dùng chung.');
-      alert(res.error || 'Không thể lưu đề thi lên máy chủ. Vui lòng thử lại.');
-      return;
-    }
+    setIsSubmitting(true);
+    try {
+      const res = await saveExamAsync(newExam);
+      if (!res.success) {
+        setErrorMessage(res.error || 'Lỗi khi lưu đề thi vào hệ thống dùng chung.');
+        return;
+      }
 
-    onExamCreated(res.exam);
-    setPublishedExam(res.exam);
+      onExamCreated(res.exam);
+      setPublishedExam(res.exam);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Lỗi khi lưu đề thi vào hệ thống dùng chung.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleCopyLink = () => {
@@ -608,11 +622,21 @@ export const QuickExamCreator: React.FC<QuickExamCreatorProps> = ({
 
           <button
             type="button"
+            disabled={isSubmitting}
             onClick={method === 'auto' ? handleAutoCreate : handleManualCreate}
-            className="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-700 hover:to-teal-700 text-white font-extrabold text-sm shadow-md hover:shadow-xl transition-all flex items-center justify-center gap-2.5"
+            className="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-700 hover:to-teal-700 text-white font-extrabold text-sm shadow-md hover:shadow-xl transition-all flex items-center justify-center gap-2.5 disabled:opacity-50 cursor-pointer"
           >
-            <Zap className="w-4 h-4 fill-white" />
-            TẠO ĐỀ VÀ LẤY LINK LÀM BÀI
+            {isSubmitting ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ĐANG LƯU LÊN MÁY CHỦ...
+              </>
+            ) : (
+              <>
+                <Zap className="w-4 h-4 fill-white" />
+                TẠO ĐỀ VÀ LẤY LINK LÀM BÀI
+              </>
+            )}
           </button>
         </div>
       </div>

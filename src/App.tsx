@@ -156,6 +156,20 @@ export default function App() {
   };
 
   // Exam helpers
+  const handleExamCreated = async (newExam: Exam) => {
+    setExamsState(prev => {
+      const idx = prev.findIndex(e => e.id === newExam.id || (e.code && e.code === newExam.code));
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = newExam;
+        return copy;
+      }
+      return [newExam, ...prev];
+    });
+    const freshExams = await loadAllExamsFromServer();
+    setExamsState(freshExams);
+  };
+
   const handleSaveExam = async (exam: Exam) => {
     await saveExamAsync(exam);
     const freshExams = await loadAllExamsFromServer();
@@ -435,9 +449,7 @@ export default function App() {
         {currentUser?.role === 'GV' && activeTab === 'word_exam_creator' && (
           <WordExamCreator
             teacherId={currentUser.id}
-            onExamCreated={(newExam) => {
-              handleSaveExam(newExam);
-            }}
+            onExamCreated={handleExamCreated}
             onPreviewExam={(exam) => handleStartExam(exam)}
             onNavigateToExams={() => setActiveTab('exams')}
           />
@@ -447,9 +459,7 @@ export default function App() {
           <QuickExamCreator
             questions={questions}
             teacherId={currentUser.id}
-            onExamCreated={(newExam) => {
-              handleSaveExam(newExam);
-            }}
+            onExamCreated={handleExamCreated}
             onPreviewExam={(exam) => handleStartExam(exam)}
             onNavigateToBank={() => setActiveTab('question_bank')}
           />

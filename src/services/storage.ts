@@ -560,23 +560,36 @@ export function getExamByCode(code: string): Exam | undefined {
 // Cross-device server fetcher for direct link support
 export async function fetchExamByCodeFromServer(codeOrId: string): Promise<Exam | undefined> {
   const clean = codeOrId.trim();
+  if (!clean) return undefined;
 
   // 1. Query shared server API first so other accounts get real-time state
   try {
-    const res = await fetch(`/api/exams/${encodeURIComponent(clean)}`);
+    let res = await fetch(`/api/exams/${encodeURIComponent(clean)}`);
+    if (!res.ok) {
+      // Fallback query parameter
+      res = await fetch(`/api/exams?code=${encodeURIComponent(clean)}`);
+    }
+    if (!res.ok) {
+      res = await fetch(`/api/exams?id=${encodeURIComponent(clean)}`);
+    }
+
     if (res.ok) {
       const serverExam: Exam = await res.json();
-      if (serverExam && serverExam.id) {
+      if (serverExam && (serverExam.id || (serverExam as any).examId)) {
+        const normalizedExam: Exam = {
+          ...serverExam,
+          id: serverExam.id || (serverExam as any).examId,
+        };
         // Cache to local storage
         const list = getExams();
-        const idx = list.findIndex(e => e.id === serverExam.id);
+        const idx = list.findIndex(e => e.id === normalizedExam.id || (e.code && e.code === normalizedExam.code));
         if (idx >= 0) {
-          list[idx] = serverExam;
+          list[idx] = normalizedExam;
         } else {
-          list.unshift(serverExam);
+          list.unshift(normalizedExam);
         }
         setLocalItem(STORAGE_KEYS.EXAMS, JSON.stringify(list));
-        return serverExam;
+        return normalizedExam;
       }
     }
   } catch (err) {
@@ -645,7 +658,7 @@ export async function saveExamAsync(exam: Exam): Promise<{ success: boolean; exa
     exam.status = exam.isPublished ? 'open' : 'draft';
   }
 
-  // Cache locally
+  // Cache locally first (optimistic persistence)
   const list = getExams();
   const idx = list.findIndex(e => e.id === exam.id);
   if (idx >= 0) {
@@ -657,18 +670,55 @@ export async function saveExamAsync(exam: Exam): Promise<{ success: boolean; exa
 
   // Sync to server and wait for confirmation
   try {
-    const res = await fetch('/api/exams', {
+    let res = await fetch('/api/exams', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(exam),
     });
 
+    // If 404 on base collection endpoint, attempt direct ID subpath
+    if (res.status === 404 && exam.id) {
+      res = await fetch(`/api/exams/${encodeURIComponent(exam.id)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(exam),
+      });
+    }
+
     if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
+      let serverError = '';
+      try {
+        const errData = await res.json();
+        serverError = errData.error || errData.message || '';
+      } catch {
+        // Response was not JSON
+      }
+
+      let errorMsg = serverError;
+      if (!errorMsg) {
+        if (res.status === 400) {
+          errorMsg = 'Dữ liệu đề thi không hợp lệ (Mã 400). Vui lòng kiểm tra lại tiêu đề và câu hỏi.';
+        } else if (res.status === 401) {
+          errorMsg = 'Phiên làm việc đã hết hạn (Mã 401). Vui lòng đăng nhập lại.';
+        } else if (res.status === 403) {
+          errorMsg = 'Bạn không có quyền chỉnh sửa hoặc phát hành đề thi này (Mã 403).';
+        } else if (res.status === 404) {
+          errorMsg = 'Không tìm thấy dịch vụ lưu trữ đề thi trên máy chủ (Mã 404). Vui lòng làm mới trang.';
+        } else if (res.status === 409) {
+          errorMsg = 'Trùng lặp mã đề thi hoặc đề đã tồn tại trong hệ thống (Mã 409).';
+        } else if (res.status === 413) {
+          errorMsg = 'Dung lượng đề thi quá lớn (Mã 413). Vui lòng giảm bớt ảnh hoặc nội dung.';
+        } else if (res.status >= 500) {
+          errorMsg = `Máy chủ lưu trữ gặp sự cố nội bộ (${res.status}). Đề thi đã được lưu tạm trên máy của bạn.`;
+        } else {
+          errorMsg = `Máy chủ trả về mã lỗi ${res.status}. Không thể đồng bộ đề thi.`;
+        }
+      }
+
       return {
         success: false,
         exam,
-        error: errData.error || `Máy chủ lưu trữ trả về lỗi (${res.status}). Không thể đồng bộ đề thi.`,
+        error: errorMsg,
       };
     }
 
@@ -691,7 +741,7 @@ export async function saveExamAsync(exam: Exam): Promise<{ success: boolean; exa
     return {
       success: false,
       exam,
-      error: 'Không thể kết nối đến máy chủ lưu trữ dùng chung. Vui lòng thử lại.',
+      error: 'Không thể kết nối đến máy chủ lưu trữ (lỗi kết nối mạng). Đề thi đã được lưu tạm trên máy của bạn.',
     };
   }
 }

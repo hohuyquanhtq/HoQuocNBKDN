@@ -14,37 +14,21 @@
       "questions": [
         {
           "id": "q1",
+          "code": "C1",
           "type": "multiple_choice",
-          "stem": "Chất nào sau đây là chất điện li mạnh?",
+          "stem": "Chất nào sau đây là chất điện li mạnh trong dung dịch nước?",
           "options": [
-            {
-              "id": "A",
-              "text": "CH3COOH"
-            },
-            {
-              "id": "B",
-              "text": "NaCl"
-            },
-            {
-              "id": "C",
-              "text": "H2O"
-            },
-            {
-              "id": "D",
-              "text": "C2H5OH"
-            }
+            { "id": "A", "label": "A", "text": "CH3COOH" },
+            { "id": "B", "label": "B", "text": "NaCl" },
+            { "id": "C", "label": "C", "text": "H2O" },
+            { "id": "D", "label": "D", "text": "C2H5OH" }
           ],
           "correctAnswer": "B",
-          "explanation": "NaCl là muối tan hoàn toàn trong nước, phân li thành ion Na+ và Cl- nên là chất điện li mạnh."
+          "explanation": "NaCl là muối tan hoàn toàn trong nước, phân li 100% thành các ion tự do Na+ và Cl-."
         }
       ],
-      "submittedCount": 1
-    },
-    {
-      "id": "test-exam-1",
-      "code": "CHEM-TEST",
-      "title": "Test Exam",
-      "questions": []
+      "startedCount": 0,
+      "submittedCount": 0
     },
     {
       "id": "exam-can-bang-hoa-hoc-11",
@@ -69,31 +53,6 @@
       "submittedCount": 0
     }
   ],
-  "submissions": [
-    {
-      "id": "sub-test-01",
-      "examId": "exam-demo-shared-01",
-      "examCode": "CHEM-DEMO",
-      "examTitle": "Đề khảo sát Hóa học chung 2025",
-      "studentId": "user-hs-1",
-      "studentName": "Trần Thị Lan Anh",
-      "studentClass": "11A1",
-      "startedAt": "2026-10-25T03:00:00.000Z",
-      "submittedAt": "2026-10-25T03:10:00.000Z",
-      "durationSeconds": 600,
-      "answers": {},
-      "flaggedQuestionIds": [],
-      "totalScore": 10,
-      "maxScore": 10,
-      "correctCount": 1,
-      "partiallyCorrectCount": 0,
-      "incorrectCount": 0,
-      "unansweredCount": 0,
-      "questionResults": [],
-      "questionsSnapshot": [],
-      "publishScoreMode": "immediately",
-      "allowReviewAfterSubmit": true
-    }
-  ],
+  "submissions": [],
   "questions": []
 }
