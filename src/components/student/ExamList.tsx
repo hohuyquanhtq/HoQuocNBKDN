@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Exam, User } from '../../types/index.ts';
-import { BookOpen, Clock, Award, Play, AlertCircle, Sparkles } from 'lucide-react';
+import { getExamByCode, fetchExamByCodeFromServer } from '../../services/storage.ts';
+import { BookOpen, Clock, Award, Play, AlertCircle, Sparkles, KeyRound, ArrowRight, Lock } from 'lucide-react';
 
 interface ExamListProps {
   exams: Exam[];
@@ -17,15 +18,57 @@ export const ExamList: React.FC<ExamListProps> = ({
 }) => {
   const publishedExams = exams.filter(e => e.isPublished);
 
+  // Quick Join by Code
+  const [inputCode, setInputCode] = useState('');
+  const [codeError, setCodeError] = useState<string | null>(null);
+  const [isSearchingCode, setIsSearchingCode] = useState(false);
+
+  // Guest confirmation modal
   const [guestModalExam, setGuestModalExam] = useState<Exam | null>(null);
   const [guestName, setGuestName] = useState('');
   const [guestClass, setGuestClass] = useState('');
 
   const handleStartClick = (exam: Exam) => {
+    if (exam.status === 'closed') {
+      alert('Đề thi này hiện đã đóng nhận bài bởi giáo viên.');
+      return;
+    }
+
     if (currentUser) {
       onStartExam(exam);
     } else {
       setGuestModalExam(exam);
+    }
+  };
+
+  const handleJoinByCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const clean = inputCode.trim().toUpperCase();
+    if (!clean) return;
+
+    setCodeError(null);
+    setIsSearchingCode(true);
+
+    try {
+      const foundExam = await fetchExamByCodeFromServer(clean);
+      if (foundExam) {
+        if (foundExam.status === 'closed') {
+          setCodeError(`Đề thi "${foundExam.title}" (Mã: ${clean}) hiện đã đóng nhận bài.`);
+          return;
+        }
+
+        if (currentUser) {
+          onStartExam(foundExam);
+        } else {
+          setGuestModalExam(foundExam);
+        }
+      } else {
+        setCodeError(`Không tìm thấy đề thi với mã "${clean}". Vui lòng kiểm tra lại mã do giáo viên cung cấp.`);
+      }
+    } catch {
+      setCodeError('Lỗi kết nối khi tra cứu mã đề.');
+    } finally {
+      setIsSearchingCode(false);
     }
   };
 
@@ -75,6 +118,51 @@ export const ExamList: React.FC<ExamListProps> = ({
         </div>
       </div>
 
+      {/* QUICK JOIN BY CODE BOX */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
+              <KeyRound className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-slate-800">Vào phòng thi nhanh bằng Mã đề</h2>
+              <p className="text-xs text-slate-500">Nhập mã đề giáo viên cung cấp (ví dụ: CHEM-2025-01 hoặc CHEM-XXXX)</p>
+            </div>
+          </div>
+
+          <form onSubmit={handleJoinByCode} className="flex items-center gap-2">
+            <input
+              type="text"
+              value={inputCode}
+              onChange={(e) => setInputCode(e.target.value)}
+              placeholder="Nhập mã đề..."
+              className="px-3.5 py-2 text-xs font-mono font-bold uppercase rounded-xl border border-slate-300 focus:border-emerald-500 focus:outline-none w-44"
+            />
+            <button
+              type="submit"
+              disabled={isSearchingCode || !inputCode.trim()}
+              className="px-4 py-2 text-xs font-bold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5 shadow-xs transition-all disabled:opacity-50"
+            >
+              {isSearchingCode ? (
+                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <>
+                  <span>Vào thi</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </>
+              )}
+            </button>
+          </form>
+        </div>
+
+        {codeError && (
+          <p className="text-xs text-rose-600 font-semibold mt-3 p-2.5 rounded-lg bg-rose-50 border border-rose-200">
+            {codeError}
+          </p>
+        )}
+      </div>
+
       {/* Available Exams */}
       <div>
         <div className="flex items-center justify-between mb-4">
@@ -92,63 +180,91 @@ export const ExamList: React.FC<ExamListProps> = ({
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {publishedExams.map(exam => (
-              <div
-                key={exam.id}
-                className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs hover:shadow-md hover:border-slate-300 transition-all flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                      Sẵn sàng thi
-                    </span>
-                    <span className="text-xs text-slate-400">
-                      {exam.questions.length} câu hỏi
-                    </span>
-                  </div>
+            {publishedExams.map(exam => {
+              const isClosed = exam.status === 'closed';
 
-                  <h3 className="font-bold text-slate-900 text-base mb-1.5">{exam.title}</h3>
-                  {exam.description && (
-                    <p className="text-xs text-slate-500 mb-4 line-clamp-2">{exam.description}</p>
-                  )}
-
-                  <div className="flex items-center gap-4 text-xs text-slate-600 py-3 border-y border-slate-100 mb-5">
-                    <span className="flex items-center gap-1.5">
-                      <Clock className="w-4 h-4 text-slate-400" />
-                      {exam.timeLimitMinutes > 0 ? `${exam.timeLimitMinutes} phút` : 'Không giới hạn'}
-                    </span>
-                    <span className="flex items-center gap-1.5">
-                      <Award className="w-4 h-4 text-slate-400" />
-                      Thang điểm {exam.totalPoints}
-                    </span>
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => handleStartClick(exam)}
-                  className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs shadow-sm hover:shadow-md transition-all flex items-center justify-center gap-2"
+              return (
+                <div
+                  key={exam.id}
+                  className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs hover:shadow-md hover:border-slate-300 transition-all flex flex-col justify-between"
                 >
-                  <Play className="w-4 h-4 fill-white" />
-                  Bắt đầu làm bài
-                </button>
-              </div>
-            ))}
+                  <div>
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                            isClosed
+                              ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                              : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                          }`}
+                        >
+                          {isClosed ? 'Đã đóng' : 'Sẵn sàng thi'}
+                        </span>
+                        <span className="text-xs font-mono font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
+                          Mã: {exam.code}
+                        </span>
+                      </div>
+
+                      <span className="text-xs text-slate-400">
+                        {exam.questions.length} câu hỏi
+                      </span>
+                    </div>
+
+                    <h3 className="font-bold text-slate-900 text-base mb-1.5">{exam.title}</h3>
+                    {exam.description && (
+                      <p className="text-xs text-slate-500 mb-4 line-clamp-2">{exam.description}</p>
+                    )}
+
+                    <div className="flex items-center gap-4 text-xs text-slate-600 py-3 border-y border-slate-100 mb-5">
+                      <span className="flex items-center gap-1.5">
+                        <Clock className="w-4 h-4 text-slate-400" />
+                        {exam.timeLimitMinutes > 0 ? `${exam.timeLimitMinutes} phút` : 'Không giới hạn'}
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <Award className="w-4 h-4 text-slate-400" />
+                        Thang điểm {exam.totalPoints}
+                      </span>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => handleStartClick(exam)}
+                    disabled={isClosed}
+                    className={`w-full py-2.5 px-4 rounded-xl font-bold text-xs shadow-sm transition-all flex items-center justify-center gap-2 ${
+                      isClosed
+                        ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                        : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white hover:shadow-md'
+                    }`}
+                  >
+                    {isClosed ? (
+                      <>
+                        <Lock className="w-4 h-4" /> Đã đóng nhận bài
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-4 h-4 fill-white" /> Bắt đầu làm bài
+                      </>
+                    )}
+                  </button>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
 
       {/* Guest Name prompt modal */}
       {guestModalExam && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm">
-          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 p-6">
-            <h3 className="font-bold text-base text-slate-900 mb-1">Xác nhận thông tin học sinh</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200 p-6 sm:p-7">
+            <h3 className="font-extrabold text-base text-slate-900 mb-1">Thông tin học sinh làm bài</h3>
             <p className="text-xs text-slate-500 mb-4">
-              Vui lòng nhập họ tên của bạn để ghi nhận kết quả bài thi.
+              Đề thi: <strong>{guestModalExam.title}</strong> (Mã: {guestModalExam.code})
             </p>
 
-            <form onSubmit={handleConfirmGuestStart} className="space-y-3">
+            <form onSubmit={handleConfirmGuestStart} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label className="block text-xs font-bold text-slate-700 mb-1">
                   Họ và tên học sinh <span className="text-rose-500">*</span>
                 </label>
                 <input
@@ -157,36 +273,40 @@ export const ExamList: React.FC<ExamListProps> = ({
                   value={guestName}
                   onChange={(e) => setGuestName(e.target.value)}
                   placeholder="Ví dụ: Nguyễn Văn An"
-                  className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 focus:border-emerald-500 focus:outline-none"
+                  className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-300 focus:border-emerald-500 focus:outline-none"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Lớp <span className="text-slate-400 font-normal">(không bắt buộc)</span>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Lớp học <span className="text-slate-400 font-normal">(không bắt buộc)</span>
                 </label>
                 <input
                   type="text"
                   value={guestClass}
                   onChange={(e) => setGuestClass(e.target.value)}
                   placeholder="Ví dụ: 11A1"
-                  className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 focus:border-emerald-500 focus:outline-none"
+                  className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-300 focus:border-emerald-500 focus:outline-none"
                 />
               </div>
 
-              <div className="pt-2 flex justify-end gap-2">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-[11px] text-slate-500">
+                Lưu ý: Bạn sẽ làm bài một câu mỗi lần trên màn hình. Câu trả lời tự động lưu khi chọn.
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2.5">
                 <button
                   type="button"
                   onClick={() => setGuestModalExam(null)}
-                  className="px-4 py-2 text-xs font-semibold rounded-xl border border-slate-300 hover:bg-slate-100 text-slate-700"
+                  className="px-4 py-2.5 text-xs font-bold rounded-xl border border-slate-300 hover:bg-slate-100 text-slate-700"
                 >
-                  Hủy
+                  Hủy bỏ
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 text-xs font-bold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
+                  className="px-5 py-2.5 text-xs font-bold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
                 >
-                  Vào thi ngay
+                  BẮT ĐẦU LÀM BÀI
                 </button>
               </div>
             </form>

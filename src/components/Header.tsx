@@ -1,8 +1,25 @@
 import React from 'react';
 import { User } from '../types/index.ts';
-import { FlaskConical, LogOut, User as UserIcon, BookOpen, Layers, FileSpreadsheet, History, Award } from 'lucide-react';
+import {
+  FlaskConical,
+  LogOut,
+  User as UserIcon,
+  BookOpen,
+  Layers,
+  FileSpreadsheet,
+  History,
+  Award,
+  Zap,
+} from 'lucide-react';
 
-export type ActiveTab = 'question_bank' | 'word_import' | 'exams' | 'student_take_exam' | 'student_history' | 'teacher_results';
+export type ActiveTab =
+  | 'quick_create'
+  | 'question_bank'
+  | 'word_import'
+  | 'exams'
+  | 'student_take_exam'
+  | 'student_history'
+  | 'teacher_results';
 
 interface HeaderProps {
   currentUser: User | null;
@@ -26,31 +43,58 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <div className="flex items-center gap-3 cursor-pointer" onClick={() => onSelectTab(currentUser?.role === 'GV' ? 'question_bank' : 'exams')}>
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 via-teal-600 to-cyan-500 flex items-center justify-center text-white shadow-md shadow-emerald-600/20">
+          <div
+            className="flex items-center gap-3 cursor-pointer select-none"
+            onClick={() => onSelectTab(currentUser?.role === 'GV' ? 'quick_create' : 'exams')}
+          >
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-600 via-teal-600 to-cyan-500 flex items-center justify-center text-white shadow-md shadow-emerald-600/20">
               <FlaskConical className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="font-extrabold text-lg tracking-tight bg-gradient-to-r from-emerald-700 via-teal-800 to-cyan-900 bg-clip-text text-transparent">
+                <span className="font-black text-lg tracking-tight bg-gradient-to-r from-emerald-700 via-teal-800 to-cyan-900 bg-clip-text text-transparent">
                   EduChem Studio
                 </span>
-                <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
                   2025 GDPT
                 </span>
               </div>
-              <p className="text-[11px] text-slate-500 hidden sm:block">Ngân hàng câu hỏi & Thi trực tuyến Hóa học</p>
+              <p className="text-[11px] text-slate-500 hidden sm:block">Ngân hàng đề & Thi trực tuyến Hóa học</p>
             </div>
           </div>
 
           {/* Navigation Links for Authenticated Users */}
           {currentUser && (
-            <nav className="hidden md:flex items-center gap-1">
+            <nav className="hidden lg:flex items-center gap-1">
               {currentUser.role === 'GV' ? (
                 <>
                   <button
+                    onClick={() => onSelectTab('quick_create')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
+                      activeTab === 'quick_create'
+                        ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-sm'
+                        : 'text-slate-700 hover:text-emerald-700 hover:bg-emerald-50'
+                    }`}
+                  >
+                    <Zap className="w-3.5 h-3.5 fill-current" />
+                    Tạo đề nhanh & Giao bài
+                  </button>
+
+                  <button
+                    onClick={() => onSelectTab('exams')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
+                      activeTab === 'exams'
+                        ? 'bg-emerald-50 text-emerald-700 shadow-xs border border-emerald-200'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                    }`}
+                  >
+                    <Layers className="w-3.5 h-3.5" />
+                    Quản lý đề thi
+                  </button>
+
+                  <button
                     onClick={() => onSelectTab('question_bank')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
                       activeTab === 'question_bank'
                         ? 'bg-emerald-50 text-emerald-700 shadow-xs border border-emerald-200'
                         : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
@@ -62,45 +106,33 @@ export const Header: React.FC<HeaderProps> = ({
 
                   <button
                     onClick={() => onSelectTab('word_import')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
                       activeTab === 'word_import'
                         ? 'bg-emerald-50 text-emerald-700 shadow-xs border border-emerald-200'
                         : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                     }`}
                   >
                     <FileSpreadsheet className="w-3.5 h-3.5" />
-                    Nhập từ Word (.docx)
-                  </button>
-
-                  <button
-                    onClick={() => onSelectTab('exams')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                      activeTab === 'exams'
-                        ? 'bg-emerald-50 text-emerald-700 shadow-xs border border-emerald-200'
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                    }`}
-                  >
-                    <Layers className="w-3.5 h-3.5" />
-                    Quản lý đề thi
+                    Nhập Word (.docx)
                   </button>
 
                   <button
                     onClick={() => onSelectTab('teacher_results')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
                       activeTab === 'teacher_results'
                         ? 'bg-emerald-50 text-emerald-700 shadow-xs border border-emerald-200'
                         : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                     }`}
                   >
                     <Award className="w-3.5 h-3.5" />
-                    Báo cáo kết quả HS
+                    Báo cáo kết quả
                   </button>
                 </>
               ) : (
                 <>
                   <button
                     onClick={() => onSelectTab('exams')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
                       activeTab === 'exams' || activeTab === 'student_take_exam'
                         ? 'bg-emerald-50 text-emerald-700 shadow-xs border border-emerald-200'
                         : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
@@ -112,14 +144,14 @@ export const Header: React.FC<HeaderProps> = ({
 
                   <button
                     onClick={() => onSelectTab('student_history')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
                       activeTab === 'student_history'
                         ? 'bg-emerald-50 text-emerald-700 shadow-xs border border-emerald-200'
                         : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                     }`}
                   >
                     <History className="w-3.5 h-3.5" />
-                    Lịch sử bài thi của tôi
+                    Lịch sử bài thi
                   </button>
                 </>
               )}
@@ -139,7 +171,7 @@ export const Header: React.FC<HeaderProps> = ({
                     {currentUser.role}
                   </div>
                   <div className="hidden sm:block text-xs">
-                    <p className="font-semibold text-slate-800 leading-tight">{currentUser.fullName}</p>
+                    <p className="font-bold text-slate-800 leading-tight">{currentUser.fullName}</p>
                     <p className="text-[10px] text-slate-500">
                       {currentUser.role === 'GV' ? 'Giáo viên Hóa học' : `Học sinh ${currentUser.className || ''}`}
                     </p>
@@ -158,13 +190,13 @@ export const Header: React.FC<HeaderProps> = ({
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => onOpenAuth('login')}
-                  className="px-3 py-1.5 text-xs font-semibold text-slate-700 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors"
+                  className="px-3 py-1.5 text-xs font-bold text-slate-700 hover:text-emerald-700 hover:bg-emerald-50 rounded-xl transition-colors"
                 >
                   Đăng nhập
                 </button>
                 <button
                   onClick={() => onOpenAuth('register')}
-                  className="px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-xs transition-colors flex items-center gap-1.5"
+                  className="px-3.5 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-xs transition-colors flex items-center gap-1.5"
                 >
                   <UserIcon className="w-3.5 h-3.5" />
                   Đăng ký

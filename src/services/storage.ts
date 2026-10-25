@@ -1,4 +1,11 @@
-import { User, Question, Exam, ExamSubmission } from '../types/index.ts';
+import {
+  User,
+  Question,
+  Exam,
+  ExamSubmission,
+  AutoExamCriteria,
+  ExamStatus,
+} from '../types/index.ts';
 
 const STORAGE_KEYS = {
   USERS: 'educhem_users_v1',
@@ -10,6 +17,38 @@ const STORAGE_KEYS = {
 
 const SALT = 'educhem_salt_2025_sec_';
 
+// In-memory fallback if localStorage is unavailable
+const memoryStore: Record<string, string> = {};
+
+function getLocalItem(key: string): string | null {
+  if (typeof localStorage !== 'undefined') {
+    try {
+      return localStorage.getItem(key);
+    } catch {
+      return memoryStore[key] || null;
+    }
+  }
+  return memoryStore[key] || null;
+}
+
+function setLocalItem(key: string, value: string): void {
+  memoryStore[key] = value;
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.setItem(key, value);
+    } catch {}
+  }
+}
+
+function removeLocalItem(key: string): void {
+  delete memoryStore[key];
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.removeItem(key);
+    } catch {}
+  }
+}
+
 export async function hashPassword(password: string): Promise<string> {
   const enc = new TextEncoder();
   const data = enc.encode(SALT + password);
@@ -19,7 +58,7 @@ export async function hashPassword(password: string): Promise<string> {
 }
 
 // Initial seed questions based on Vietnamese GDPT 2018 Chemistry curriculum
-const SEED_QUESTIONS: Question[] = [
+export const SEED_QUESTIONS: Question[] = [
   {
     id: 'ch-mc-01',
     code: 'CH-TN-01',
@@ -188,9 +227,13 @@ const SEED_QUESTIONS: Question[] = [
   },
 ];
 
-const SEED_EXAM: Exam = {
+export const SEED_EXAM: Exam = {
   id: 'exam-can-bang-hoa-hoc-11',
+  code: 'CHEM-2025-01',
   title: 'Đề kiểm tra Hóa học 11 - Chủ đề Cân bằng hóa học (GDPT 2018)',
+  subject: 'Hóa học',
+  topic: 'Cân bằng hóa học',
+  targetGrade: 'Lớp 11',
   description: 'Gồm 3 phần: Trắc nghiệm 4 lựa chọn, Đúng/Sai với 4 phát biểu và Trả lời ngắn.',
   timeLimitMinutes: 20,
   totalPoints: 10.0,
@@ -198,11 +241,27 @@ const SEED_EXAM: Exam = {
   createdAt: new Date().toISOString(),
   createdBy: 'user-gv-1',
   isPublished: true,
+  status: 'open',
+  shuffleQuestions: false,
+  shuffleOptions: false,
+  publishScoreMode: 'immediately',
+  allowReviewAfterSubmit: true,
+  startedCount: 0,
+  submittedCount: 0,
 };
+
+export function generateUniqueExamCode(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let rand = '';
+  for (let i = 0; i < 4; i++) {
+    rand += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return `CHEM-${rand}`;
+}
 
 export async function initializeStorage(): Promise<void> {
   // Check users
-  const rawUsers = localStorage.getItem(STORAGE_KEYS.USERS);
+  const rawUsers = getLocalItem(STORAGE_KEYS.USERS);
   if (!rawUsers) {
     const gvPassHash = await hashPassword('educhem2025@');
     const hsPassHash = await hashPassword('hocsinh2025@');
@@ -229,26 +288,68 @@ export async function initializeStorage(): Promise<void> {
         createdAt: new Date().toISOString(),
       },
     ];
-    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(defaultUsers));
+    setLocalItem(STORAGE_KEYS.USERS, JSON.stringify(defaultUsers));
   }
 
   // Check questions
-  const rawQuestions = localStorage.getItem(STORAGE_KEYS.QUESTIONS);
+  const rawQuestions = getLocalItem(STORAGE_KEYS.QUESTIONS);
   if (!rawQuestions) {
-    localStorage.setItem(STORAGE_KEYS.QUESTIONS, JSON.stringify(SEED_QUESTIONS));
+    setLocalItem(STORAGE_KEYS.QUESTIONS, JSON.stringify(SEED_QUESTIONS));
   }
 
   // Check exams
-  const rawExams = localStorage.getItem(STORAGE_KEYS.EXAMS);
+  const rawExams = getLocalItem(STORAGE_KEYS.EXAMS);
   if (!rawExams) {
-    localStorage.setItem(STORAGE_KEYS.EXAMS, JSON.stringify([SEED_EXAM]));
+    setLocalItem(STORAGE_KEYS.EXAMS, JSON.stringify([SEED_EXAM]));
+  }
+
+  // Sync with server in background
+  syncWithServerBackground();
+}
+
+async function syncWithServerBackground(): Promise<void> {
+  try {
+    const res = await fetch('/api/exams');
+    if (res.ok) {
+      const serverExams = await res.json();
+      if (Array.isArray(serverExams) && serverExams.length > 0) {
+        // Merge with local exams
+        const local = getExams();
+        const serverIds = new Set(serverExams.map((e: Exam) => e.id));
+        const merged = [...serverExams];
+        for (const loc of local) {
+          if (!serverIds.has(loc.id)) {
+            merged.push(loc);
+            // also upload to server
+            fetch('/api/exams', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(loc),
+            }).catch(() => {});
+          }
+        }
+        setLocalItem(STORAGE_KEYS.EXAMS, JSON.stringify(merged));
+      } else {
+        // push seed exam to server
+        const local = getExams();
+        for (const e of local) {
+          fetch('/api/exams', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(e),
+          }).catch(() => {});
+        }
+      }
+    }
+  } catch {
+    // offline mode or standalone vite
   }
 }
 
 // User methods
 export function getUsers(): User[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.USERS);
+    const raw = getLocalItem(STORAGE_KEYS.USERS);
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
@@ -285,7 +386,7 @@ export async function registerUser(data: {
   };
 
   users.push(newUser);
-  localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+  setLocalItem(STORAGE_KEYS.USERS, JSON.stringify(users));
   return { success: true, user: newUser };
 }
 
@@ -309,7 +410,7 @@ export async function loginUser(username: string, password: string): Promise<{ s
 
 export function getCurrentUser(): User | null {
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
+    const raw = getLocalItem(STORAGE_KEYS.CURRENT_USER);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
@@ -317,11 +418,11 @@ export function getCurrentUser(): User | null {
 }
 
 export function setCurrentUser(user: User): void {
-  localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(user));
+  setLocalItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(user));
 }
 
 export function clearCurrentUser(): void {
-  localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+  removeLocalItem(STORAGE_KEYS.CURRENT_USER);
 }
 
 export async function updateUserProfile(userId: string, data: {
@@ -342,7 +443,7 @@ export async function updateUserProfile(userId: string, data: {
     phoneNumber: data.phoneNumber?.trim() || undefined,
   };
 
-  localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+  setLocalItem(STORAGE_KEYS.USERS, JSON.stringify(users));
   const current = getCurrentUser();
   if (current && current.id === userId) {
     setCurrentUser(users[idx]);
@@ -361,7 +462,7 @@ export async function changeUserPassword(userId: string, oldPass: string, newPas
   }
 
   users[idx].passwordHash = await hashPassword(newPass);
-  localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+  setLocalItem(STORAGE_KEYS.USERS, JSON.stringify(users));
 
   const current = getCurrentUser();
   if (current && current.id === userId) {
@@ -373,7 +474,7 @@ export async function changeUserPassword(userId: string, oldPass: string, newPas
 // Question methods
 export function getQuestions(): Question[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.QUESTIONS);
+    const raw = getLocalItem(STORAGE_KEYS.QUESTIONS);
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
@@ -388,27 +489,40 @@ export function saveQuestion(question: Question): void {
   } else {
     list.unshift(question);
   }
-  localStorage.setItem(STORAGE_KEYS.QUESTIONS, JSON.stringify(list));
+  setLocalItem(STORAGE_KEYS.QUESTIONS, JSON.stringify(list));
+
+  // Sync to server
+  fetch('/api/questions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ questions: [question] }),
+  }).catch(() => {});
 }
 
 export function saveMultipleQuestions(newQuestions: Question[]): void {
   const list = getQuestions();
-  // Filter out any duplicates by ID
   const existingIds = new Set(list.map(q => q.id));
   const toAdd = newQuestions.filter(q => !existingIds.has(q.id));
   const updated = [...toAdd, ...list];
-  localStorage.setItem(STORAGE_KEYS.QUESTIONS, JSON.stringify(updated));
+  setLocalItem(STORAGE_KEYS.QUESTIONS, JSON.stringify(updated));
+
+  // Sync to server
+  fetch('/api/questions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ questions: toAdd }),
+  }).catch(() => {});
 }
 
 export function deleteQuestion(id: string): void {
   const list = getQuestions().filter(q => q.id !== id);
-  localStorage.setItem(STORAGE_KEYS.QUESTIONS, JSON.stringify(list));
+  setLocalItem(STORAGE_KEYS.QUESTIONS, JSON.stringify(list));
 }
 
 // Exam methods
 export function getExams(): Exam[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.EXAMS);
+    const raw = getLocalItem(STORAGE_KEYS.EXAMS);
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
@@ -419,7 +533,42 @@ export function getExamById(id: string): Exam | undefined {
   return getExams().find(e => e.id === id);
 }
 
+export function getExamByCode(code: string): Exam | undefined {
+  const cleanCode = code.trim().toUpperCase();
+  return getExams().find(e => e.code && e.code.toUpperCase() === cleanCode);
+}
+
+// Cross-device server fetcher for direct link support
+export async function fetchExamByCodeFromServer(codeOrId: string): Promise<Exam | undefined> {
+  // Check local first
+  const local = getExamByCode(codeOrId) || getExamById(codeOrId);
+  if (local) return local;
+
+  // Fetch from server API
+  try {
+    const res = await fetch(`/api/exams/${encodeURIComponent(codeOrId.trim())}`);
+    if (res.ok) {
+      const serverExam: Exam = await res.json();
+      if (serverExam && serverExam.id) {
+        saveExam(serverExam); // cache locally
+        return serverExam;
+      }
+    }
+  } catch (err) {
+    console.warn('Could not fetch exam from server, using local fallback:', err);
+  }
+  return undefined;
+}
+
 export function saveExam(exam: Exam): void {
+  // Ensure code and status are present
+  if (!exam.code) {
+    exam.code = generateUniqueExamCode();
+  }
+  if (!exam.status) {
+    exam.status = exam.isPublished ? 'open' : 'draft';
+  }
+
   const list = getExams();
   const idx = list.findIndex(e => e.id === exam.id);
   if (idx >= 0) {
@@ -427,18 +576,149 @@ export function saveExam(exam: Exam): void {
   } else {
     list.unshift(exam);
   }
-  localStorage.setItem(STORAGE_KEYS.EXAMS, JSON.stringify(list));
+  setLocalItem(STORAGE_KEYS.EXAMS, JSON.stringify(list));
+
+  // Sync to server
+  fetch('/api/exams', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(exam),
+  }).catch(() => {});
+}
+
+export function updateExamStatus(id: string, status: ExamStatus): void {
+  const list = getExams();
+  const exam = list.find(e => e.id === id);
+  if (exam) {
+    exam.status = status;
+    exam.isPublished = status === 'open';
+    setLocalItem(STORAGE_KEYS.EXAMS, JSON.stringify(list));
+
+    // Sync to server
+    fetch(`/api/exams/${id}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status, isPublished: exam.isPublished }),
+    }).catch(() => {});
+  }
+}
+
+export function incrementExamStarted(id: string): void {
+  const list = getExams();
+  const exam = list.find(e => e.id === id);
+  if (exam) {
+    exam.startedCount = (exam.startedCount || 0) + 1;
+    setLocalItem(STORAGE_KEYS.EXAMS, JSON.stringify(list));
+
+    // Sync to server
+    fetch(`/api/exams/${id}/start`, { method: 'POST' }).catch(() => {});
+  }
 }
 
 export function deleteExam(id: string): void {
   const list = getExams().filter(e => e.id !== id);
-  localStorage.setItem(STORAGE_KEYS.EXAMS, JSON.stringify(list));
+  setLocalItem(STORAGE_KEYS.EXAMS, JSON.stringify(list));
+
+  // Sync to server
+  fetch(`/api/exams/${id}`, { method: 'DELETE' }).catch(() => {});
+}
+
+// Auto Exam Generator from question bank
+export function generateExamFromCriteria(
+  criteria: AutoExamCriteria,
+  bank: Question[],
+  teacherId: string
+): { success: boolean; exam?: Exam; error?: string } {
+  // Filter questions by topic if specified
+  let candidateQuestions = [...bank];
+  if (criteria.topic && criteria.topic.trim() && criteria.topic !== 'all') {
+    const topicNorm = criteria.topic.trim().toLowerCase();
+    candidateQuestions = candidateQuestions.filter(
+      q => q.topic && q.topic.toLowerCase().includes(topicNorm)
+    );
+  }
+
+  // Count available by type
+  const availableMC = candidateQuestions.filter(q => q.type === 'multiple_choice');
+  const availableTF = candidateQuestions.filter(q => q.type === 'true_false');
+  const availableSA = candidateQuestions.filter(q => q.type === 'short_answer');
+
+  // Verify counts
+  if (criteria.mcCount > availableMC.length) {
+    return {
+      success: false,
+      error: `Ngân hàng chỉ có ${availableMC.length} câu trắc nghiệm 4 lựa chọn (yêu cầu ${criteria.mcCount} câu). Vui lòng thêm câu hỏi hoặc giảm số lượng yêu cầu.`,
+    };
+  }
+
+  if (criteria.tfCount > availableTF.length) {
+    return {
+      success: false,
+      error: `Ngân hàng chỉ có ${availableTF.length} câu đúng/sai (yêu cầu ${criteria.tfCount} câu). Vui lòng thêm câu hỏi hoặc giảm số lượng yêu cầu.`,
+    };
+  }
+
+  if (criteria.saCount > availableSA.length) {
+    return {
+      success: false,
+      error: `Ngân hàng chỉ có ${availableSA.length} câu trả lời ngắn (yêu cầu ${criteria.saCount} câu). Vui lòng thêm câu hỏi hoặc giảm số lượng yêu cầu.`,
+    };
+  }
+
+  // Helper shuffle array
+  const shuffle = <T>(arr: T[]): T[] => {
+    const copy = [...arr];
+    for (let i = copy.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy;
+  };
+
+  // Pick questions
+  const pickedMC = shuffle(availableMC).slice(0, criteria.mcCount);
+  const pickedTF = shuffle(availableTF).slice(0, criteria.tfCount);
+  const pickedSA = shuffle(availableSA).slice(0, criteria.saCount);
+
+  let selectedQuestions = [...pickedMC, ...pickedTF, ...pickedSA];
+
+  if (criteria.shuffleQuestions) {
+    selectedQuestions = shuffle(selectedQuestions);
+  }
+
+  const examCode = generateUniqueExamCode();
+  const newExam: Exam = {
+    id: `exam-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    code: examCode,
+    title: criteria.title.trim(),
+    subject: criteria.subject || 'Hóa học',
+    topic: criteria.topic || undefined,
+    targetGrade: criteria.targetGrade || undefined,
+    timeLimitMinutes: criteria.timeLimitMinutes,
+    totalPoints: 10.0,
+    questions: selectedQuestions,
+    createdAt: new Date().toISOString(),
+    createdBy: teacherId,
+    isPublished: true,
+    status: 'open',
+    shuffleQuestions: criteria.shuffleQuestions,
+    shuffleOptions: criteria.shuffleOptions,
+    publishScoreMode: criteria.publishScoreMode,
+    allowReviewAfterSubmit: criteria.allowReviewAfterSubmit,
+    startTime: criteria.startTime,
+    endTime: criteria.endTime,
+    startedCount: 0,
+    submittedCount: 0,
+  };
+
+  saveExam(newExam);
+  return { success: true, exam: newExam };
 }
 
 // Submission methods
 export function getSubmissions(): ExamSubmission[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.SUBMISSIONS);
+    const raw = getLocalItem(STORAGE_KEYS.SUBMISSIONS);
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
@@ -459,12 +739,26 @@ export function getSubmissionsByExam(examId: string): ExamSubmission[] {
 
 export function saveSubmission(submission: ExamSubmission): void {
   const list = getSubmissions();
-  // Avoid duplicate submissions for the same submission ID
   const idx = list.findIndex(s => s.id === submission.id);
   if (idx >= 0) {
     list[idx] = submission;
   } else {
     list.unshift(submission);
+
+    // Update submittedCount on the exam
+    const exams = getExams();
+    const exam = exams.find(e => e.id === submission.examId);
+    if (exam) {
+      exam.submittedCount = (exam.submittedCount || 0) + 1;
+      setLocalItem(STORAGE_KEYS.EXAMS, JSON.stringify(exams));
+    }
   }
-  localStorage.setItem(STORAGE_KEYS.SUBMISSIONS, JSON.stringify(list));
+  setLocalItem(STORAGE_KEYS.SUBMISSIONS, JSON.stringify(list));
+
+  // Sync to server API
+  fetch('/api/submissions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(submission),
+  }).catch(() => {});
 }

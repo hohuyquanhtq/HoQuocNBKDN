@@ -1,4 +1,4 @@
-import { Question, StudentAnswer, QuestionGradingResult, ExamSubmission } from '../types/index.ts';
+import { Question, StudentAnswer, QuestionGradingResult, ExamSubmission, ScorePublishMode } from '../types/index.ts';
 
 export interface ScoreReport {
   totalScore: number;
@@ -7,6 +7,7 @@ export interface ScoreReport {
   partiallyCorrectCount: number;
   incorrectCount: number;
   unansweredCount: number;
+  pendingManualCount: number;
   questionResults: QuestionGradingResult[];
 }
 
@@ -23,6 +24,7 @@ export function gradeExam(
       partiallyCorrectCount: 0,
       incorrectCount: 0,
       unansweredCount: 0,
+      pendingManualCount: 0,
       questionResults: [],
     };
   }
@@ -35,13 +37,14 @@ export function gradeExam(
   let partiallyCorrectCount = 0;
   let incorrectCount = 0;
   let unansweredCount = 0;
+  let pendingManualCount = 0;
 
   const questionResults: QuestionGradingResult[] = [];
 
   for (const q of questions) {
     const studentAns = answers[q.id];
     let earned = 0;
-    let status: 'correct' | 'partially_correct' | 'incorrect' | 'unanswered' = 'unanswered';
+    let status: 'correct' | 'partially_correct' | 'incorrect' | 'unanswered' | 'pending_manual' = 'unanswered';
     let details: any = undefined;
 
     if (q.type === 'multiple_choice') {
@@ -150,6 +153,11 @@ export function gradeExam(
         status = 'unanswered';
         earned = 0;
         unansweredCount++;
+      } else if (!q.correctAnswer || q.requiresManualGrading) {
+        // If question requires manual grading or has no key, mark as pending_manual
+        status = 'pending_manual';
+        earned = 0;
+        pendingManualCount++;
       } else {
         const isCorrect = checkShortAnswer(textAns, q.correctAnswer || '', q.acceptableAnswers, q.tolerance);
         if (isCorrect) {
@@ -171,6 +179,7 @@ export function gradeExam(
         status,
         studentAnswer: textAns || null,
         correctAnswer: q.correctAnswer || null,
+        details: status === 'pending_manual' ? { notes: 'Chờ giáo viên chấm' } : undefined,
       });
     }
 
@@ -187,6 +196,7 @@ export function gradeExam(
     partiallyCorrectCount,
     incorrectCount,
     unansweredCount,
+    pendingManualCount,
     questionResults,
   };
 }
@@ -242,6 +252,7 @@ export function formatScore(score: number): string {
 // Build complete submission object ready to persist
 export function createSubmission(
   examId: string,
+  examCode: string,
   examTitle: string,
   studentId: string,
   studentName: string,
@@ -251,13 +262,16 @@ export function createSubmission(
   questions: Question[],
   answers: Record<string, StudentAnswer>,
   flaggedQuestionIds: string[],
-  totalPoints: number = 10.0
+  totalPoints: number = 10.0,
+  publishScoreMode: ScorePublishMode = 'immediately',
+  allowReviewAfterSubmit: boolean = true
 ): ExamSubmission {
   const report = gradeExam(questions, answers, totalPoints);
 
   return {
     id: `sub-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
     examId,
+    examCode,
     examTitle,
     studentId,
     studentName,
@@ -273,7 +287,55 @@ export function createSubmission(
     partiallyCorrectCount: report.partiallyCorrectCount,
     incorrectCount: report.incorrectCount,
     unansweredCount: report.unansweredCount,
+    pendingManualCount: report.pendingManualCount,
     questionResults: report.questionResults,
     questionsSnapshot: JSON.parse(JSON.stringify(questions)),
+    publishScoreMode,
+    allowReviewAfterSubmit,
   };
+}
+
+// Export student submissions to an Excel-compatible CSV file with UTF-8 BOM
+export function exportSubmissionsToCsv(submissions: ExamSubmission[], examTitle: string): void {
+  const headers = [
+    'STT',
+    'Mã bài thi',
+    'Họ và tên học sinh',
+    'Lớp',
+    'Điểm số',
+    'Thang điểm',
+    'Số câu đúng',
+    'Số câu đúng 1 phần',
+    'Số câu sai',
+    'Số câu chưa làm',
+    'Thời gian làm (giây)',
+    'Thời điểm nộp',
+  ];
+
+  const rows = submissions.map((sub, idx) => [
+    idx + 1,
+    `"${sub.examCode}"`,
+    `"${sub.studentName.replace(/"/g, '""')}"`,
+    `"${(sub.studentClass || '').replace(/"/g, '""')}"`,
+    `"${formatScore(sub.totalScore)}"`,
+    `"${formatScore(sub.maxScore)}"`,
+    sub.correctCount,
+    sub.partiallyCorrectCount,
+    sub.incorrectCount,
+    sub.unansweredCount,
+    sub.durationSeconds,
+    `"${new Date(sub.submittedAt).toLocaleString('vi-VN')}"`,
+  ]);
+
+  const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\r\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const safeTitle = (examTitle || 'Ket_qua_thi').replace(/[^a-zA-Z0-9_-]/g, '_');
+  a.download = `EduChem_${safeTitle}_${Date.now()}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }

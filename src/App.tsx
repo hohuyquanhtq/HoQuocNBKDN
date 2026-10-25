@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Question, Exam, ExamSubmission } from './types/index.ts';
+import { User, Question, Exam, ExamSubmission, ExamStatus } from './types/index.ts';
 import {
   initializeStorage,
   getCurrentUser,
@@ -12,14 +12,17 @@ import {
   getExams,
   saveExam,
   deleteExam,
+  updateExamStatus,
   getSubmissions,
   saveSubmission,
   getSubmissionsByStudent,
+  fetchExamByCodeFromServer,
 } from './services/storage.ts';
 
 import { Header, ActiveTab } from './components/Header.tsx';
 import { AuthModal } from './components/AuthModal.tsx';
 import { ProfileModal } from './components/ProfileModal.tsx';
+import { QuickExamCreator } from './components/teacher/QuickExamCreator.tsx';
 import { QuestionBank } from './components/teacher/QuestionBank.tsx';
 import { WordImportModal } from './components/teacher/WordImportModal.tsx';
 import { ExamManager } from './components/teacher/ExamManager.tsx';
@@ -39,6 +42,8 @@ export default function App() {
 
   // Taking & Result Screen states
   const [activeExam, setActiveExam] = useState<Exam | null>(null);
+  const [guestName, setGuestName] = useState<string>('');
+  const [guestClass, setGuestClass] = useState<string>('');
   const [activeSubmission, setActiveSubmission] = useState<ExamSubmission | null>(null);
   const [reviewSubmission, setReviewSubmission] = useState<ExamSubmission | null>(null);
 
@@ -47,22 +52,51 @@ export default function App() {
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isReady, setIsReady] = useState(false);
+  const [linkNotice, setLinkNotice] = useState<string | null>(null);
 
-  // Initialize data on mount
+  // Initialize data and check URL parameters on mount
   useEffect(() => {
     async function init() {
       await initializeStorage();
       const user = getCurrentUser();
       setCurrentUserState(user);
-      setQuestionsState(getQuestions());
-      setExamsState(getExams());
+      const loadedQuestions = getQuestions();
+      const loadedExams = getExams();
+      setQuestionsState(loadedQuestions);
+      setExamsState(loadedExams);
       setSubmissionsState(getSubmissions());
 
-      if (user?.role === 'GV') {
-        setActiveTab('question_bank');
+      // Check if URL has ?examCode=... or ?code=...
+      const params = new URLSearchParams(window.location.search);
+      const examCodeParam = params.get('examCode') || params.get('code');
+
+      if (examCodeParam) {
+        const found = await fetchExamByCodeFromServer(examCodeParam);
+        if (found) {
+          if (found.status === 'closed') {
+            setLinkNotice(`Bài thi "${found.title}" (Mã: ${found.code}) hiện đã đóng nhận bài.`);
+            setActiveTab('exams');
+          } else {
+            // If user is logged in, launch exam directly
+            if (user) {
+              setActiveExam(found);
+            } else {
+              // Open guest join on exam list
+              setActiveTab('exams');
+              setLinkNotice(`Bạn đang mở bài thi: "${found.title}" (Mã: ${found.code}). Nhấn "Bắt đầu làm bài" để vào thi!`);
+            }
+          }
+        } else {
+          setLinkNotice(`Không tìm thấy bài thi với mã "${examCodeParam}".`);
+        }
       } else {
-        setActiveTab('exams');
+        if (user?.role === 'GV') {
+          setActiveTab('quick_create');
+        } else {
+          setActiveTab('exams');
+        }
       }
+
       setIsReady(true);
     }
     init();
@@ -96,6 +130,11 @@ export default function App() {
     setExamsState(getExams());
   };
 
+  const handleUpdateStatus = (id: string, status: ExamStatus) => {
+    updateExamStatus(id, status);
+    setExamsState(getExams());
+  };
+
   // Submissions helper
   const handleExamSubmitted = (submission: ExamSubmission) => {
     saveSubmission(submission);
@@ -108,7 +147,7 @@ export default function App() {
   const handleLoginSuccess = (user: User) => {
     setCurrentUserState(user);
     if (user.role === 'GV') {
-      setActiveTab('question_bank');
+      setActiveTab('quick_create');
     } else {
       setActiveTab('exams');
     }
@@ -124,8 +163,10 @@ export default function App() {
   };
 
   // Start Exam
-  const handleStartExam = (exam: Exam, _guestName?: string, _guestClass?: string) => {
+  const handleStartExam = (exam: Exam, studentNameArg?: string, studentClassArg?: string) => {
     setActiveExam(exam);
+    if (studentNameArg) setGuestName(studentNameArg);
+    if (studentClassArg) setGuestClass(studentClassArg);
     setActiveSubmission(null);
     setReviewSubmission(null);
   };
@@ -141,13 +182,15 @@ export default function App() {
     );
   }
 
-  // Active Exam Taking Mode (full viewport focus)
+  // Active Exam Taking Mode (full viewport focus with single question view)
   if (activeExam) {
     return (
       <div className="min-h-screen bg-slate-100/70 p-4 sm:p-6 font-sans">
         <ExamTaking
           exam={activeExam}
           currentUser={currentUser}
+          guestName={guestName}
+          guestClass={guestClass}
           onSubmitted={handleExamSubmitted}
           onExit={() => setActiveExam(null)}
         />
@@ -242,7 +285,10 @@ export default function App() {
         activeTab={activeTab}
         onSelectTab={(tab) => {
           // If HS clicks teacher tabs, stay on exams
-          if (currentUser?.role === 'HS' && (tab === 'question_bank' || tab === 'word_import' || tab === 'teacher_results')) {
+          if (
+            currentUser?.role === 'HS' &&
+            (tab === 'quick_create' || tab === 'question_bank' || tab === 'word_import' || tab === 'teacher_results')
+          ) {
             setActiveTab('exams');
           } else {
             setActiveTab(tab);
@@ -256,8 +302,47 @@ export default function App() {
         onLogout={handleLogout}
       />
 
+      {/* Direct Link Banner notice if loaded from URL parameter */}
+      {linkNotice && (
+        <div className="bg-emerald-50 border-b border-emerald-200 px-4 py-3 text-xs sm:text-sm text-emerald-900 font-semibold flex items-center justify-between">
+          <span>📢 {linkNotice}</span>
+          <button
+            onClick={() => setLinkNotice(null)}
+            className="text-emerald-700 hover:text-emerald-900 font-bold ml-4"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Teacher Views */}
+        {currentUser?.role === 'GV' && activeTab === 'quick_create' && (
+          <QuickExamCreator
+            questions={questions}
+            teacherId={currentUser.id}
+            onExamCreated={(newExam) => {
+              handleSaveExam(newExam);
+            }}
+            onPreviewExam={(exam) => handleStartExam(exam)}
+            onNavigateToBank={() => setActiveTab('question_bank')}
+          />
+        )}
+
+        {currentUser?.role === 'GV' && activeTab === 'exams' && (
+          <ExamManager
+            exams={exams}
+            questions={questions}
+            onSaveExam={handleSaveExam}
+            onDeleteExam={handleDeleteExam}
+            onUpdateStatus={handleUpdateStatus}
+            onStartTakeExam={(exam) => handleStartExam(exam)}
+            onViewSubmissions={() => setActiveTab('teacher_results')}
+            onNavigateToQuickCreate={() => setActiveTab('quick_create')}
+            teacherId={currentUser.id}
+          />
+        )}
+
         {currentUser?.role === 'GV' && activeTab === 'question_bank' && (
           <QuestionBank
             questions={questions}
@@ -269,18 +354,6 @@ export default function App() {
 
         {currentUser?.role === 'GV' && activeTab === 'word_import' && (
           <WordImportModal onImportComplete={handleImportQuestions} />
-        )}
-
-        {currentUser?.role === 'GV' && activeTab === 'exams' && (
-          <ExamManager
-            exams={exams}
-            questions={questions}
-            onSaveExam={handleSaveExam}
-            onDeleteExam={handleDeleteExam}
-            onStartTakeExam={(exam) => handleStartExam(exam)}
-            onViewSubmissions={() => setActiveTab('teacher_results')}
-            teacherId={currentUser.id}
-          />
         )}
 
         {currentUser?.role === 'GV' && activeTab === 'teacher_results' && (

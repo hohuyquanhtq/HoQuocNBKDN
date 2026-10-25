@@ -58,13 +58,21 @@ export interface ShortAnswerQuestion extends BaseQuestion {
   correctAnswer?: string; // e.g. "0.5" or "33" or "NaOH"
   tolerance?: number; // sai số cho phép nếu là số (e.g. 0.01)
   acceptableAnswers?: string[];
+  requiresManualGrading?: boolean; // Đánh dấu cần giáo viên chấm nếu không thể đối chiếu tự động
 }
 
 export type Question = MultipleChoiceQuestion | TrueFalseQuestion | ShortAnswerQuestion;
 
+export type ExamStatus = 'draft' | 'open' | 'closed';
+export type ScorePublishMode = 'immediately' | 'after_teacher_release';
+
 export interface Exam {
   id: string;
+  code: string; // Mã đề duy nhất (e.g. CHEM-9281)
   title: string;
+  subject?: string; // Môn học (e.g. "Hóa học")
+  topic?: string; // Chủ đề / Chuyên đề
+  targetGrade?: string; // Lớp / Đối tượng (e.g. "Lớp 11", "Lớp 12")
   description?: string;
   timeLimitMinutes: number; // 0 for unlimited
   totalPoints: number; // Default 10.0
@@ -72,6 +80,38 @@ export interface Exam {
   createdAt: string;
   createdBy: string; // User ID of GV
   isPublished: boolean;
+  status: ExamStatus; // 'draft' | 'open' | 'closed'
+  shuffleQuestions: boolean; // Xáo trộn câu hỏi
+  shuffleOptions: boolean; // Xáo trộn phương án A,B,C,D
+  publishScoreMode: ScorePublishMode; // Hiện điểm ngay sau khi nộp hoặc sau khi GV công bố
+  allowReviewAfterSubmit: boolean; // Cho phép xem đáp án & hướng dẫn giải sau khi nộp
+  startTime?: string; // Thời điểm bắt đầu nhận bài (ISO string)
+  endTime?: string; // Thời điểm kết thúc nhận bài (ISO string)
+  startedCount?: number; // Số học sinh đã bắt đầu
+  submittedCount?: number; // Số học sinh đã nộp
+}
+
+export interface AutoExamCriteria {
+  title: string;
+  subject: string;
+  topic: string;
+  targetGrade: string;
+  mcCount: number;
+  tfCount: number;
+  saCount: number;
+  levelDistribution: {
+    biet: number;
+    hieu: number;
+    vanDung: number;
+    vanDungCao: number;
+  };
+  timeLimitMinutes: number;
+  shuffleQuestions: boolean;
+  shuffleOptions: boolean;
+  publishScoreMode: ScorePublishMode;
+  allowReviewAfterSubmit: boolean;
+  startTime?: string;
+  endTime?: string;
 }
 
 export interface StudentMultipleChoiceAnswer {
@@ -99,23 +139,24 @@ export interface QuestionGradingResult {
   type: QuestionType;
   maxPoints: number;
   earnedPoints: number;
-  status: 'correct' | 'partially_correct' | 'incorrect' | 'unanswered';
+  status: 'correct' | 'partially_correct' | 'incorrect' | 'unanswered' | 'pending_manual';
   studentAnswer: any;
   correctAnswer: any;
   details?: {
-    // for true_false
     statementResults?: Record<'a' | 'b' | 'c' | 'd', {
       student?: boolean | null;
       correct?: boolean;
       isMatch: boolean;
     }>;
     correctStatementsCount?: number;
+    notes?: string;
   };
 }
 
 export interface ExamSubmission {
   id: string;
   examId: string;
+  examCode: string; // Mã đề thi
   examTitle: string;
   studentId: string;
   studentName: string;
@@ -131,6 +172,10 @@ export interface ExamSubmission {
   partiallyCorrectCount: number;
   incorrectCount: number;
   unansweredCount: number;
+  pendingManualCount?: number;
   questionResults: QuestionGradingResult[];
-  questionsSnapshot: Question[]; // Snapshots so original exam questions at time of taking are preserved
+  questionsSnapshot: Question[]; // Snapshot của các câu hỏi tại thời điểm làm bài
+  // Display policy snapshot from exam
+  publishScoreMode: ScorePublishMode;
+  allowReviewAfterSubmit: boolean;
 }
